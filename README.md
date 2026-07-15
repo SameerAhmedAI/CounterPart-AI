@@ -61,4 +61,4 @@ npm run dev
 
 The frontend runs at `http://localhost:5173`.
 
-Choose a negotiation scenario to generate an in-character opening message, then continue the live negotiation in the chat interface. You can also click **Test Groq Connection** to call the FastAPI endpoint and display the raw JSON response from Groq.
+Choose a negotiation scenario to generate an in-character opening message, then continue the live negotiation in the chat interface. Each negotiation turn returns the AI reply, the tactic it used, and a coaching note on your last message. You can also click **Test Groq Connection** to call the FastAPI endpoint and display the raw JSON response from Groq.

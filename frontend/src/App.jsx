@@ -4,6 +4,7 @@ function App() {
   const [scenarios, setScenarios] = useState([]);
   const [selectedSession, setSelectedSession] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [latestCoaching, setLatestCoaching] = useState(null);
   const [draftMessage, setDraftMessage] = useState("");
   const [responseText, setResponseText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -89,6 +90,7 @@ function App() {
           content: data.opening_message,
         },
       ]);
+      setLatestCoaching(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -99,8 +101,16 @@ function App() {
   function resetSession() {
     setSelectedSession(null);
     setMessages([]);
+    setLatestCoaching(null);
     setDraftMessage("");
     setError("");
+  }
+
+  function formatLabel(value) {
+    return value
+      .split("_")
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(" ");
   }
 
   async function sendMessage(event) {
@@ -148,6 +158,13 @@ function App() {
           content: data.reply,
         },
       ]);
+      setLatestCoaching({
+        tacticUsed: data.tactic_used || "none",
+        tacticExplanation: data.tactic_explanation || "No tactic explanation available.",
+        coachingNote: data.coaching_note || "No coaching note available.",
+        mistakeType: data.mistake_type || "none",
+        usedFallback: Boolean(data.used_fallback),
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
       setMessages((currentMessages) => [
@@ -163,9 +180,15 @@ function App() {
   }
 
   if (selectedSession) {
+    const isGoodMove = latestCoaching?.mistakeType === "good_move";
+    const hasMistake =
+      latestCoaching &&
+      latestCoaching.mistakeType !== "none" &&
+      latestCoaching.mistakeType !== "good_move";
+
     return (
       <main className="min-h-screen bg-zinc-950 px-6 py-10 text-zinc-100">
-        <section className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-4xl flex-col gap-6">
+        <section className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-6xl flex-col gap-6">
           <button
             type="button"
             onClick={resetSession}
@@ -186,75 +209,143 @@ function App() {
             </p>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col rounded-md border border-zinc-800 bg-zinc-900">
-            <div className="flex max-h-[56vh] min-h-80 flex-col gap-4 overflow-y-auto p-5">
-              {messages.map((message, index) => {
-                const isUser = message.role === "user";
-                const isSystem = message.role === "system";
+          <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="flex min-h-0 flex-col rounded-md border border-zinc-800 bg-zinc-900">
+              <div className="flex max-h-[56vh] min-h-80 flex-col gap-4 overflow-y-auto p-5">
+                {messages.map((message, index) => {
+                  const isUser = message.role === "user";
+                  const isSystem = message.role === "system";
 
-                return (
-                  <div
-                    key={`${message.role}-${index}`}
-                    className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-                    ref={index === messages.length - 1 ? latestMessageRef : null}
-                  >
+                  return (
                     <div
-                      className={`max-w-[82%] rounded-md px-4 py-3 text-sm leading-6 shadow-sm sm:max-w-[70%] ${
-                        isUser
-                          ? "bg-emerald-400 text-zinc-950"
-                          : isSystem
-                            ? "border border-red-500/40 bg-red-950/40 text-red-100"
-                            : "border border-zinc-700 bg-zinc-950 text-zinc-100"
-                      }`}
+                      key={`${message.role}-${index}`}
+                      className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+                      ref={index === messages.length - 1 ? latestMessageRef : null}
                     >
-                      <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] opacity-70">
-                        {isUser ? "You" : isSystem ? "System" : "Counterpart"}
-                      </p>
-                      <p className="whitespace-pre-wrap">{message.content}</p>
+                      <div
+                        className={`max-w-[82%] rounded-md px-4 py-3 text-sm leading-6 shadow-sm sm:max-w-[70%] ${
+                          isUser
+                            ? "bg-emerald-400 text-zinc-950"
+                            : isSystem
+                              ? "border border-red-500/40 bg-red-950/40 text-red-100"
+                              : "border border-zinc-700 bg-zinc-950 text-zinc-100"
+                        }`}
+                      >
+                        <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] opacity-70">
+                          {isUser ? "You" : isSystem ? "System" : "Counterpart"}
+                        </p>
+                        <p className="whitespace-pre-wrap">{message.content}</p>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {isSending ? (
+                  <div className="flex justify-start" ref={latestMessageRef}>
+                    <div className="rounded-md border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm text-zinc-300">
+                      Counterpart is thinking...
                     </div>
                   </div>
-                );
-              })}
+                ) : null}
+              </div>
 
-              {isSending ? (
-                <div className="flex justify-start" ref={latestMessageRef}>
-                  <div className="rounded-md border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm text-zinc-300">
-                    Counterpart is thinking...
-                  </div>
-                </div>
+              {error ? (
+                <pre className="mx-5 mb-4 overflow-auto rounded-md border border-red-500/40 bg-red-950/40 p-3 text-sm leading-6 text-red-100">
+                  {error}
+                </pre>
               ) : null}
+
+              <form
+                onSubmit={sendMessage}
+                className="flex flex-col gap-3 border-t border-zinc-800 p-4 sm:flex-row"
+              >
+                <label className="sr-only" htmlFor="negotiation-message">
+                  Your negotiation message
+                </label>
+                <textarea
+                  id="negotiation-message"
+                  value={draftMessage}
+                  onChange={(event) => setDraftMessage(event.target.value)}
+                  disabled={isSending}
+                  rows={2}
+                  placeholder="Type your reply..."
+                  className="min-h-12 flex-1 resize-none rounded-md border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm leading-6 text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                />
+                <button
+                  type="submit"
+                  disabled={isSending || !draftMessage.trim()}
+                  className="rounded-md bg-emerald-400 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+                >
+                  {isSending ? "Sending..." : "Send"}
+                </button>
+              </form>
             </div>
 
-            {error ? (
-              <pre className="mx-5 mb-4 overflow-auto rounded-md border border-red-500/40 bg-red-950/40 p-3 text-sm leading-6 text-red-100">
-                {error}
-              </pre>
-            ) : null}
+            <aside className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                Live coaching
+              </p>
 
-            <form
-              onSubmit={sendMessage}
-              className="flex flex-col gap-3 border-t border-zinc-800 p-4 sm:flex-row"
-            >
-              <label className="sr-only" htmlFor="negotiation-message">
-                Your negotiation message
-              </label>
-              <textarea
-                id="negotiation-message"
-                value={draftMessage}
-                onChange={(event) => setDraftMessage(event.target.value)}
-                disabled={isSending}
-                rows={2}
-                placeholder="Type your reply..."
-                className="min-h-12 flex-1 resize-none rounded-md border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm leading-6 text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
-              />
-              <button
-                type="submit"
-                disabled={isSending || !draftMessage.trim()}
-                className="rounded-md bg-emerald-400 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
-              >
-                {isSending ? "Sending..." : "Send"}
-              </button>
-            </form>
+              {latestCoaching ? (
+                <div className="mt-5 flex flex-col gap-4">
+                  <div
+                    className="rounded-md border border-zinc-700 bg-zinc-950 p-4"
+                    title={latestCoaching.tacticExplanation}
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      AI tactic
+                    </p>
+                    <p className="mt-2 text-base font-semibold text-white">
+                      {formatLabel(latestCoaching.tacticUsed)}
+                    </p>
+                    <details className="mt-3 text-sm leading-6 text-zinc-300">
+                      <summary className="cursor-pointer text-emerald-300">
+                        Explanation
+                      </summary>
+                      <p className="mt-2">{latestCoaching.tacticExplanation}</p>
+                    </details>
+                  </div>
+
+                  <div
+                    className={`rounded-md border p-4 ${
+                      isGoodMove
+                        ? "border-emerald-500/50 bg-emerald-950/30"
+                        : hasMistake
+                          ? "border-amber-500/50 bg-amber-950/30"
+                          : "border-zinc-700 bg-zinc-950"
+                    }`}
+                  >
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Your move
+                    </p>
+                    <p
+                      className={`mt-2 text-sm font-semibold ${
+                        isGoodMove
+                          ? "text-emerald-200"
+                          : hasMistake
+                            ? "text-amber-200"
+                            : "text-zinc-200"
+                      }`}
+                    >
+                      {formatLabel(latestCoaching.mistakeType)}
+                    </p>
+                    <p className="mt-3 text-sm leading-6 text-zinc-200">
+                      {latestCoaching.coachingNote}
+                    </p>
+                  </div>
+
+                  {latestCoaching.usedFallback ? (
+                    <p className="rounded-md border border-amber-500/40 bg-amber-950/30 p-3 text-sm leading-6 text-amber-100">
+                      Coaching metadata used a fallback because the model response was not valid JSON.
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-5 text-sm leading-6 text-zinc-400">
+                  Send your first reply to see the tactic used and coaching on your move.
+                </p>
+              )}
+            </aside>
           </div>
         </section>
       </main>
