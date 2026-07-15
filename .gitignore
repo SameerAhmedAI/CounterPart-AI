@@ -1,0 +1,22 @@
+.env
+.env.local
+.env.*.local
+node_modules/
+__pycache__/
+**/__pycache__/
+venv/
+.venv/
+*.pyc
+.DS_Store
+
+# Credentials and secrets
+*credentials*
+*credential*
+*secrets*
+*secret*
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+service-account*.json
