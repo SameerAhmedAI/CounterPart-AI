@@ -50,6 +50,10 @@ class NegotiateRequest(BaseModel):
     message: str
 
 
+class EndSessionRequest(BaseModel):
+    session_id: str
+
+
 def get_groq_client() -> OpenAI:
     return OpenAI(
         api_key=settings.groq_api_key,
@@ -105,6 +109,84 @@ def parse_negotiation_response(raw_content: str) -> dict[str, str | bool]:
         else "No coaching note was provided.",
         "mistake_type": coerce_choice(parsed.get("mistake_type"), MISTAKE_VALUES),
         "used_fallback": False,
+    }
+
+
+def coerce_int(value: object, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
+    try:
+        coerced = int(value)
+    except (TypeError, ValueError):
+        coerced = default
+
+    if minimum is not None:
+        coerced = max(minimum, coerced)
+
+    if maximum is not None:
+        coerced = min(maximum, coerced)
+
+    return coerced
+
+
+def coerce_grade(value: object) -> str:
+    if isinstance(value, str) and value.upper() in {"A", "B", "C", "D", "F"}:
+        return value.upper()
+
+    return "C"
+
+
+def coerce_pace(value: object) -> str:
+    if isinstance(value, str) and value in {"too fast", "appropriate", "too slow"}:
+        return value
+
+    return "appropriate"
+
+
+def coerce_takeaways(value: object) -> list[str]:
+    if isinstance(value, list):
+        takeaways = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+    else:
+        takeaways = []
+
+    fallback_takeaways = [
+        "Use a specific anchor backed by concrete leverage before asking for movement.",
+        "Avoid concessions that are not tied to a clear tradeoff from the other side.",
+        "Name and counter the counterpart's tactic instead of reacting only to the surface offer.",
+    ]
+
+    return (takeaways + fallback_takeaways)[:3]
+
+
+def parse_report_response(raw_content: str, tactics_faced: list[str]) -> dict[str, object]:
+    try:
+        parsed = json.loads(raw_content)
+    except json.JSONDecodeError:
+        parsed = {}
+
+    if not isinstance(parsed, dict):
+        parsed = {}
+
+    return {
+        "overall_grade": coerce_grade(parsed.get("overall_grade")),
+        "anchoring_quality": coerce_int(
+            parsed.get("anchoring_quality"),
+            default=5,
+            minimum=1,
+            maximum=10,
+        ),
+        "concession_count": coerce_int(
+            parsed.get("concession_count"),
+            default=0,
+            minimum=0,
+        ),
+        "concession_pace": coerce_pace(parsed.get("concession_pace")),
+        "tactics_faced": tactics_faced,
+        "tactics_successfully_countered": coerce_int(
+            parsed.get("tactics_successfully_countered"),
+            default=0,
+            minimum=0,
+        ),
+        "takeaways": coerce_takeaways(parsed.get("takeaways")),
+        "used_fallback": not bool(parsed),
     }
 
 
@@ -186,6 +268,7 @@ def start_session(payload: StartSessionRequest):
                 "content": opening_message,
             },
         ],
+        "turns": [],
     }
 
     return {
@@ -218,6 +301,11 @@ def negotiate(payload: NegotiateRequest):
 
     if not isinstance(history, list):
         raise HTTPException(status_code=500, detail="Session history is invalid.")
+
+    turns = session["turns"]
+
+    if not isinstance(turns, list):
+        raise HTTPException(status_code=500, detail="Session turn log is invalid.")
 
     history.append({"role": "user", "content": user_message})
 
@@ -272,6 +360,17 @@ def negotiate(payload: NegotiateRequest):
     structured_response = parse_negotiation_response(raw_content)
     reply = structured_response["reply"]
     history.append({"role": "assistant", "content": reply})
+    turns.append(
+        {
+            "user_message": user_message,
+            "ai_reply": reply,
+            "tactic_used": structured_response["tactic_used"],
+            "tactic_explanation": structured_response["tactic_explanation"],
+            "coaching_note": structured_response["coaching_note"],
+            "mistake_type": structured_response["mistake_type"],
+            "used_fallback": structured_response["used_fallback"],
+        }
+    )
 
     return {
         "session_id": payload.session_id,
@@ -281,4 +380,86 @@ def negotiate(payload: NegotiateRequest):
         "coaching_note": structured_response["coaching_note"],
         "mistake_type": structured_response["mistake_type"],
         "used_fallback": structured_response["used_fallback"],
+    }
+
+
+@app.post("/api/end-session")
+def end_session(payload: EndSessionRequest):
+    session = sessions.get(payload.session_id)
+
+    if session is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Session expired or invalid. Start a new scenario.",
+        )
+
+    turns = session["turns"]
+
+    if not isinstance(turns, list):
+        raise HTTPException(status_code=500, detail="Session turn log is invalid.")
+
+    if not turns:
+        raise HTTPException(
+            status_code=400,
+            detail="No negotiation turns found. Send at least one message before ending.",
+        )
+
+    tactics_faced = sorted(
+        {
+            turn.get("tactic_used")
+            for turn in turns
+            if isinstance(turn, dict)
+            and isinstance(turn.get("tactic_used"), str)
+            and turn.get("tactic_used") != "none"
+        }
+    )
+
+    report_prompt = (
+        "You are Counterpart's negotiation coach. Generate an end-of-session "
+        "report from the provided turn log. Return only a valid JSON object with "
+        "this exact shape: "
+        '{"overall_grade":"A|B|C|D|F","anchoring_quality":1,'
+        '"concession_count":0,"concession_pace":"too fast|appropriate|too slow",'
+        '"tactics_faced":["string"],"tactics_successfully_countered":0,'
+        '"takeaways":["string","string","string"]}. '
+        "tactics_faced must exactly match the provided tactics_faced list; do not "
+        "invent or reclassify tactics. The three takeaways must be specific, "
+        "actionable, and reference actual user messages or counterpart replies from "
+        "this conversation rather than generic negotiation advice."
+    )
+
+    report_input = {
+        "scenario_id": session["scenario_id"],
+        "tactics_faced": tactics_faced,
+        "turns": turns,
+    }
+
+    client = get_groq_client()
+
+    try:
+        response = client.chat.completions.create(
+            model=settings.groq_model,
+            response_format={"type": "json_object"},
+            messages=[
+                {
+                    "role": "system",
+                    "content": report_prompt,
+                },
+                {
+                    "role": "user",
+                    "content": json.dumps(report_input),
+                },
+            ],
+        )
+    except OpenAIError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    raw_content = response.choices[0].message.content or ""
+    report = parse_report_response(raw_content, tactics_faced)
+
+    return {
+        "session_id": payload.session_id,
+        "scenario_id": session["scenario_id"],
+        "report": report,
+        "turns": turns,
     }

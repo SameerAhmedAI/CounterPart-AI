@@ -49,6 +49,7 @@ Scenario endpoints:
 GET  http://127.0.0.1:8000/api/scenarios
 POST http://127.0.0.1:8000/api/start-session
 POST http://127.0.0.1:8000/api/negotiate
+POST http://127.0.0.1:8000/api/end-session
 ```
 
 ## Frontend Setup
@@ -61,4 +62,8 @@ npm run dev
 
 The frontend runs at `http://localhost:5173`.
 
-Choose a negotiation scenario to generate an in-character opening message, then continue the live negotiation in the chat interface. Each negotiation turn returns the AI reply, the tactic it used, and a coaching note on your last message. You can also click **Test Groq Connection** to call the FastAPI endpoint and display the raw JSON response from Groq.
+Choose a negotiation scenario to generate an in-character opening message, then continue the live negotiation in the chat interface. Each negotiation turn returns the AI reply, the tactic it used, and a coaching note on your last message. End the negotiation to generate a scored report with takeaways and an annotated transcript. You can also click **Test Groq Connection** to call the FastAPI endpoint and display the raw JSON response from Groq.
+Note: tactic and coaching classification is generated per-turn by the
+language model and may occasionally vary in consistency between similar
+situations across different sessions. This is an inherent tradeoff of
+LLM-based classification rather than a fixed rule engine.

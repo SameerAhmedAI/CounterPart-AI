@@ -5,10 +5,12 @@ function App() {
   const [selectedSession, setSelectedSession] = useState(null);
   const [messages, setMessages] = useState([]);
   const [latestCoaching, setLatestCoaching] = useState(null);
+  const [sessionReport, setSessionReport] = useState(null);
   const [draftMessage, setDraftMessage] = useState("");
   const [responseText, setResponseText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isEnding, setIsEnding] = useState(false);
   const [loadingScenarioId, setLoadingScenarioId] = useState("");
   const [error, setError] = useState("");
   const latestMessageRef = useRef(null);
@@ -67,6 +69,7 @@ function App() {
     setLoadingScenarioId(scenarioId);
     setError("");
     setResponseText("");
+    setSessionReport(null);
 
     try {
       const response = await fetch("/api/start-session", {
@@ -91,6 +94,7 @@ function App() {
         },
       ]);
       setLatestCoaching(null);
+      setDraftMessage("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -102,6 +106,7 @@ function App() {
     setSelectedSession(null);
     setMessages([]);
     setLatestCoaching(null);
+    setSessionReport(null);
     setDraftMessage("");
     setError("");
   }
@@ -179,6 +184,225 @@ function App() {
     }
   }
 
+  async function endSession() {
+    if (!selectedSession || isEnding) {
+      return;
+    }
+
+    setIsEnding(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/end-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          session_id: selectedSession.session_id,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not generate report.");
+      }
+
+      setSessionReport(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setIsEnding(false);
+    }
+  }
+
+  function tryAgain() {
+    if (!selectedSession) {
+      return;
+    }
+
+    startSession(selectedSession.scenario.id);
+  }
+
+  if (sessionReport && selectedSession) {
+    const report = sessionReport.report;
+    const anchoringPercent = `${Number(report.anchoring_quality || 0) * 10}%`;
+    const paceSteps = ["too fast", "appropriate", "too slow"];
+
+    return (
+      <main className="min-h-screen bg-zinc-950 px-6 py-10 text-zinc-100">
+        <section className="mx-auto flex max-w-6xl flex-col gap-8">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-300">
+                Session report
+              </p>
+              <h1 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+                {selectedSession.scenario.title}
+              </h1>
+              <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-300">
+                Review your negotiation performance, the tactics you faced, and the moments to improve.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={tryAgain}
+              disabled={Boolean(loadingScenarioId)}
+              className="w-fit rounded-md bg-emerald-400 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+            >
+              {loadingScenarioId ? "Starting..." : "Try Again"}
+            </button>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-[18rem_minmax(0,1fr)]">
+            <div className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                Overall grade
+              </p>
+              <p className="mt-3 text-7xl font-bold tracking-tight text-white">
+                {report.overall_grade}
+              </p>
+              <p className="mt-4 text-sm leading-6 text-zinc-300">
+                {report.concession_count} concessions, pace: {report.concession_pace}
+              </p>
+            </div>
+
+            <div className="grid gap-5 sm:grid-cols-2">
+              <div className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                  Anchoring quality
+                </p>
+                <div className="mt-5 h-3 rounded-full bg-zinc-800">
+                  <div
+                    className="h-3 rounded-full bg-emerald-400"
+                    style={{ width: anchoringPercent }}
+                  />
+                </div>
+                <p className="mt-3 text-sm font-semibold text-zinc-200">
+                  {report.anchoring_quality}/10
+                </p>
+              </div>
+
+              <div className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-zinc-500">
+                  Concession pace
+                </p>
+                <div className="mt-5 grid grid-cols-3 gap-2">
+                  {paceSteps.map((step) => (
+                    <div
+                      key={step}
+                      className={`rounded-md px-3 py-2 text-center text-xs font-semibold ${
+                        report.concession_pace === step
+                          ? "bg-emerald-400 text-zinc-950"
+                          : "bg-zinc-800 text-zinc-400"
+                      }`}
+                    >
+                      {formatLabel(step.replace(" ", "_"))}
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-sm text-zinc-300">
+                  Tactics countered: {report.tactics_successfully_countered}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+            <div className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                Takeaways
+              </p>
+              <ul className="mt-4 flex flex-col gap-3">
+                {report.takeaways.map((takeaway, index) => (
+                  <li
+                    key={`${takeaway}-${index}`}
+                    className="rounded-md border border-zinc-800 bg-zinc-950 p-4 text-sm leading-6 text-zinc-200"
+                  >
+                    {takeaway}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
+              <p className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-400">
+                Tactics faced
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {report.tactics_faced.length ? (
+                  report.tactics_faced.map((tactic) => (
+                    <span
+                      key={tactic}
+                      className="rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-xs font-semibold text-emerald-200"
+                    >
+                      {formatLabel(tactic)}
+                    </span>
+                  ))
+                ) : (
+                  <p className="text-sm text-zinc-400">No explicit tactics logged.</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-md border border-zinc-800 bg-zinc-900 p-5">
+            <p className="text-sm font-semibold uppercase tracking-[0.16em] text-zinc-400">
+              Transcript
+            </p>
+            <div className="mt-5 flex flex-col gap-5">
+              {sessionReport.turns.map((turn, index) => (
+                <div
+                  key={`${turn.user_message}-${index}`}
+                  className="rounded-md border border-zinc-800 bg-zinc-950 p-4"
+                >
+                  <div className="flex justify-end">
+                    <div className="max-w-[82%] rounded-md bg-emerald-400 px-4 py-3 text-sm leading-6 text-zinc-950">
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] opacity-70">
+                        You
+                      </p>
+                      <p className="whitespace-pre-wrap">{turn.user_message}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex justify-start">
+                    <div className="max-w-[82%] rounded-md border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm leading-6 text-zinc-100">
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Counterpart
+                      </p>
+                      <p className="whitespace-pre-wrap">{turn.ai_reply}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-md border border-zinc-800 bg-zinc-900 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Tactic: {formatLabel(turn.tactic_used)}
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-zinc-300">
+                        {turn.tactic_explanation}
+                      </p>
+                    </div>
+                    <div className="rounded-md border border-zinc-800 bg-zinc-900 p-3">
+                      <p className="text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                        Coaching: {formatLabel(turn.mistake_type)}
+                      </p>
+                      <p className="mt-2 text-sm leading-6 text-zinc-300">
+                        {turn.coaching_note}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   if (selectedSession) {
     const isGoodMove = latestCoaching?.mistakeType === "good_move";
     const hasMistake =
@@ -189,13 +413,23 @@ function App() {
     return (
       <main className="min-h-screen bg-zinc-950 px-6 py-10 text-zinc-100">
         <section className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-6xl flex-col gap-6">
-          <button
-            type="button"
-            onClick={resetSession}
-            className="w-fit rounded-md border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:border-emerald-300 hover:text-emerald-200"
-          >
-            Back to scenarios
-          </button>
+          <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
+            <button
+              type="button"
+              onClick={resetSession}
+              className="w-fit rounded-md border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:border-emerald-300 hover:text-emerald-200"
+            >
+              Back to scenarios
+            </button>
+            <button
+              type="button"
+              onClick={endSession}
+              disabled={isEnding || isSending || messages.length < 2}
+              className="w-fit rounded-md bg-emerald-400 px-4 py-2 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+            >
+              {isEnding ? "Generating..." : "End Negotiation"}
+            </button>
+          </div>
 
           <div>
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-300">
