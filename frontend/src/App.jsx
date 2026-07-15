@@ -1,9 +1,39 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function App() {
+  const [scenarios, setScenarios] = useState([]);
+  const [selectedSession, setSelectedSession] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [draftMessage, setDraftMessage] = useState("");
   const [responseText, setResponseText] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const [loadingScenarioId, setLoadingScenarioId] = useState("");
   const [error, setError] = useState("");
+  const latestMessageRef = useRef(null);
+
+  useEffect(() => {
+    async function loadScenarios() {
+      try {
+        const response = await fetch("/api/scenarios");
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || "Could not load scenarios.");
+        }
+
+        setScenarios(data.scenarios || []);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not load scenarios.");
+      }
+    }
+
+    loadScenarios();
+  }, []);
+
+  useEffect(() => {
+    latestMessageRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isSending]);
 
   async function testGroqConnection() {
     setIsLoading(true);
@@ -32,29 +62,252 @@ function App() {
     }
   }
 
+  async function startSession(scenarioId) {
+    setLoadingScenarioId(scenarioId);
+    setError("");
+    setResponseText("");
+
+    try {
+      const response = await fetch("/api/start-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ scenario_id: scenarioId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not start the scenario.");
+      }
+
+      setSelectedSession(data);
+      setMessages([
+        {
+          role: "assistant",
+          content: data.opening_message,
+        },
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoadingScenarioId("");
+    }
+  }
+
+  function resetSession() {
+    setSelectedSession(null);
+    setMessages([]);
+    setDraftMessage("");
+    setError("");
+  }
+
+  async function sendMessage(event) {
+    event.preventDefault();
+
+    const trimmedMessage = draftMessage.trim();
+
+    if (!trimmedMessage || isSending || !selectedSession) {
+      return;
+    }
+
+    setIsSending(true);
+    setError("");
+    setDraftMessage("");
+    setMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        role: "user",
+        content: trimmedMessage,
+      },
+    ]);
+
+    try {
+      const response = await fetch("/api/negotiate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          session_id: selectedSession.session_id,
+          message: trimmedMessage,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Could not send message.");
+      }
+
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          role: "assistant",
+          content: data.reply,
+        },
+      ]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          role: "system",
+          content: "Message failed. Your session may have expired; try starting again.",
+        },
+      ]);
+    } finally {
+      setIsSending(false);
+    }
+  }
+
+  if (selectedSession) {
+    return (
+      <main className="min-h-screen bg-zinc-950 px-6 py-10 text-zinc-100">
+        <section className="mx-auto flex min-h-[calc(100vh-5rem)] max-w-4xl flex-col gap-6">
+          <button
+            type="button"
+            onClick={resetSession}
+            className="w-fit rounded-md border border-zinc-700 px-4 py-2 text-sm font-semibold text-zinc-200 transition hover:border-emerald-300 hover:text-emerald-200"
+          >
+            Back to scenarios
+          </button>
+
+          <div>
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-300">
+              Session {selectedSession.session_id}
+            </p>
+            <h1 className="mt-3 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              {selectedSession.scenario.title}
+            </h1>
+            <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-300">
+              {selectedSession.scenario.context}
+            </p>
+          </div>
+
+          <div className="flex min-h-0 flex-1 flex-col rounded-md border border-zinc-800 bg-zinc-900">
+            <div className="flex max-h-[56vh] min-h-80 flex-col gap-4 overflow-y-auto p-5">
+              {messages.map((message, index) => {
+                const isUser = message.role === "user";
+                const isSystem = message.role === "system";
+
+                return (
+                  <div
+                    key={`${message.role}-${index}`}
+                    className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+                    ref={index === messages.length - 1 ? latestMessageRef : null}
+                  >
+                    <div
+                      className={`max-w-[82%] rounded-md px-4 py-3 text-sm leading-6 shadow-sm sm:max-w-[70%] ${
+                        isUser
+                          ? "bg-emerald-400 text-zinc-950"
+                          : isSystem
+                            ? "border border-red-500/40 bg-red-950/40 text-red-100"
+                            : "border border-zinc-700 bg-zinc-950 text-zinc-100"
+                      }`}
+                    >
+                      <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] opacity-70">
+                        {isUser ? "You" : isSystem ? "System" : "Counterpart"}
+                      </p>
+                      <p className="whitespace-pre-wrap">{message.content}</p>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {isSending ? (
+                <div className="flex justify-start" ref={latestMessageRef}>
+                  <div className="rounded-md border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm text-zinc-300">
+                    Counterpart is thinking...
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {error ? (
+              <pre className="mx-5 mb-4 overflow-auto rounded-md border border-red-500/40 bg-red-950/40 p-3 text-sm leading-6 text-red-100">
+                {error}
+              </pre>
+            ) : null}
+
+            <form
+              onSubmit={sendMessage}
+              className="flex flex-col gap-3 border-t border-zinc-800 p-4 sm:flex-row"
+            >
+              <label className="sr-only" htmlFor="negotiation-message">
+                Your negotiation message
+              </label>
+              <textarea
+                id="negotiation-message"
+                value={draftMessage}
+                onChange={(event) => setDraftMessage(event.target.value)}
+                disabled={isSending}
+                rows={2}
+                placeholder="Type your reply..."
+                className="min-h-12 flex-1 resize-none rounded-md border border-zinc-700 bg-zinc-950 px-4 py-3 text-sm leading-6 text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <button
+                type="submit"
+                disabled={isSending || !draftMessage.trim()}
+                className="rounded-md bg-emerald-400 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+              >
+                {isSending ? "Sending..." : "Send"}
+              </button>
+            </form>
+          </div>
+        </section>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-zinc-950 px-6 py-12 text-zinc-100">
-      <section className="mx-auto flex max-w-3xl flex-col gap-8">
+      <section className="mx-auto flex max-w-5xl flex-col gap-8">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-300">
             Counterpart
           </p>
           <h1 className="mt-3 text-4xl font-bold tracking-tight text-white sm:text-5xl">
-            Groq connection test
+            Choose your negotiation sparring match
           </h1>
           <p className="mt-4 max-w-2xl text-base leading-7 text-zinc-300">
-            Run a simple backend call before building the negotiation sparring flow.
+            Pick a scenario and Counterpart will generate an in-character opening move from a resistant counterpart.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={testGroqConnection}
-          disabled={isLoading}
-          className="w-fit rounded-md bg-emerald-400 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
-        >
-          {isLoading ? "Testing..." : "Test Groq Connection"}
-        </button>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {scenarios.map((scenario) => (
+            <button
+              key={scenario.id}
+              type="button"
+              onClick={() => startSession(scenario.id)}
+              disabled={Boolean(loadingScenarioId)}
+              className="rounded-md border border-zinc-800 bg-zinc-900 p-5 text-left transition hover:border-emerald-300 hover:bg-zinc-900/80 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span className="text-lg font-semibold text-white">
+                {scenario.title}
+              </span>
+              <span className="mt-3 block text-sm leading-6 text-zinc-300">
+                {scenario.context}
+              </span>
+              <span className="mt-5 block text-sm font-semibold text-emerald-300">
+                {loadingScenarioId === scenario.id ? "Starting..." : "Start scenario"}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex flex-col gap-4 border-t border-zinc-800 pt-6">
+          <button
+            type="button"
+            onClick={testGroqConnection}
+            disabled={isLoading}
+            className="w-fit rounded-md bg-emerald-400 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
+          >
+            {isLoading ? "Testing..." : "Test Groq Connection"}
+          </button>
+        </div>
 
         {error ? (
           <pre className="overflow-auto rounded-md border border-red-500/40 bg-red-950/40 p-4 text-sm leading-6 text-red-100">

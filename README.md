@@ -1,6 +1,6 @@
 # Counterpart
 
-Counterpart is an AI negotiation sparring partner. This scaffold sets up a FastAPI backend and a Vite + React + Tailwind frontend with a single end-to-end Groq connection test.
+Counterpart is an AI negotiation sparring partner. This scaffold sets up a FastAPI backend and a Vite + React + Tailwind frontend with scenario selection, persona-driven session starts, and an end-to-end Groq connection test.
 
 ## Why Groq
 
@@ -43,6 +43,14 @@ Test endpoint:
 POST http://127.0.0.1:8000/api/ping-gpt
 ```
 
+Scenario endpoints:
+
+```bash
+GET  http://127.0.0.1:8000/api/scenarios
+POST http://127.0.0.1:8000/api/start-session
+POST http://127.0.0.1:8000/api/negotiate
+```
+
 ## Frontend Setup
 
 ```bash
@@ -53,4 +61,4 @@ npm run dev
 
 The frontend runs at `http://localhost:5173`.
 
-Click **Test Groq Connection** to call the FastAPI endpoint and display the raw JSON response from Groq.
+Choose a negotiation scenario to generate an in-character opening message, then continue the live negotiation in the chat interface. You can also click **Test Groq Connection** to call the FastAPI endpoint and display the raw JSON response from Groq.
