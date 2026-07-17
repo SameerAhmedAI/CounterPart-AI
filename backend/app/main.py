@@ -55,6 +55,23 @@ class EndSessionRequest(BaseModel):
     session_id: str
 
 
+def serialize_scenario(scenario_id: object) -> dict[str, str]:
+    scenario = get_scenario(str(scenario_id))
+
+    if scenario is None:
+        return {
+            "id": str(scenario_id),
+            "title": "Negotiation Session",
+            "context": "This session is still active, but its scenario metadata could not be loaded.",
+        }
+
+    return {
+        "id": scenario.id,
+        "title": scenario.title,
+        "context": scenario.context,
+    }
+
+
 def get_groq_client() -> OpenAI:
     return OpenAI(
         api_key=settings.groq_api_key,
@@ -237,6 +254,67 @@ def scenarios():
     return {"scenarios": list_scenarios()}
 
 
+@app.get("/api/sessions/{session_id}")
+def get_session(session_id: str):
+    session = sessions.get(session_id)
+
+    if session is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Session expired or invalid. Start a new scenario.",
+        )
+
+    turns = session.get("turns")
+
+    if not isinstance(turns, list):
+        raise HTTPException(status_code=500, detail="Session turn log is invalid.")
+
+    messages = [
+        {
+            "role": "assistant",
+            "content": session.get("opening_message", ""),
+        }
+    ]
+
+    for turn in turns:
+        if not isinstance(turn, dict):
+            continue
+
+        messages.extend(
+            [
+                {
+                    "role": "user",
+                    "content": turn.get("user_message", ""),
+                },
+                {
+                    "role": "assistant",
+                    "content": turn.get("ai_reply", ""),
+                },
+            ]
+        )
+
+    latest_turn = turns[-1] if turns and isinstance(turns[-1], dict) else None
+
+    return {
+        "session_id": session_id,
+        "scenario": serialize_scenario(session.get("scenario_id")),
+        "opening_message": session.get("opening_message", ""),
+        "messages": messages,
+        "latest_coaching": {
+            "tactic_used": latest_turn.get("tactic_used", "none"),
+            "tactic_explanation": latest_turn.get(
+                "tactic_explanation",
+                "No tactic explanation available.",
+            ),
+            "coaching_note": latest_turn.get("coaching_note", "No coaching note available."),
+            "mistake_type": latest_turn.get("mistake_type", "none"),
+            "used_fallback": latest_turn.get("used_fallback", False),
+        }
+        if latest_turn
+        else None,
+    }
+
+
 @app.post("/api/start-session")
 def start_session(payload: StartSessionRequest):
     scenario = get_scenario(payload.scenario_id)
@@ -291,11 +369,7 @@ def start_session(payload: StartSessionRequest):
 
     return {
         "session_id": session_id,
-        "scenario": {
-            "id": scenario.id,
-            "title": scenario.title,
-            "context": scenario.context,
-        },
+        "scenario": serialize_scenario(scenario.id),
         "opening_message": opening_message,
     }
 
@@ -517,6 +591,7 @@ def end_session(payload: EndSessionRequest):
     return {
         "session_id": payload.session_id,
         "scenario_id": session["scenario_id"],
+        "scenario": serialize_scenario(session["scenario_id"]),
         "opening_message": session["opening_message"],
         "report": report,
         "turns": turns,

@@ -1,29 +1,29 @@
 # Counterpart
 
-Counterpart is an AI negotiation sparring partner. This scaffold sets up a FastAPI backend and a Vite + React + Tailwind frontend with scenario selection, persona-driven session starts, live coaching, and an end-of-session report.
+Counterpart is an AI negotiation practice app. It pairs a FastAPI backend with a Vite + React + Tailwind frontend so users can choose a negotiation scenario, talk with an in-character AI counterpart, receive real-time tactic/coaching feedback, and generate an end-of-session report.
 
 ## Why Groq
 
-This project uses Groq through its OpenAI-compatible API instead of calling OpenAI directly. Groq's free tier keeps the hackathon budget at zero while still letting the app use a familiar chat-completions client shape.
+Counterpart uses Groq through its OpenAI-compatible API instead of calling OpenAI directly. Groq's free tier keeps the hackathon budget low while preserving the familiar chat-completions client shape.
 
 ## Project Structure
 
 ```text
-backend/   FastAPI API server
-frontend/  Vite + React + Tailwind client
+backend/   FastAPI API server, Groq client, scenarios, sessions, reports
+frontend/  Vite + React + Tailwind client with react-router-dom routing
 ```
 
 ## Environment
 
-Copy `.env.example` to `.env` in the project root and fill in your Groq API key:
+Copy `.env.example` to `.env` in the project root and fill in your Groq values:
 
 ```bash
-GROQ_API_KEY=your_key_here
+GROQ_API_KEY=your_api_key
 GROQ_MODEL=llama-3.3-70b-versatile
 FRONTEND_ORIGIN=http://localhost:5173
 ```
 
-Do not commit `.env`. It is ignored by `.gitignore`, and the API key/model value should be read from `.env` at runtime.
+Do not commit `.env`. It is covered by `.gitignore`. The Groq API key and model name are read from environment variables at runtime and should not be hardcoded.
 
 ## Backend Setup
 
@@ -37,15 +37,6 @@ uvicorn app.main:app --reload
 
 The backend runs at `http://127.0.0.1:8000`.
 
-Scenario endpoints:
-
-```bash
-GET  http://127.0.0.1:8000/api/scenarios
-POST http://127.0.0.1:8000/api/start-session
-POST http://127.0.0.1:8000/api/negotiate
-POST http://127.0.0.1:8000/api/end-session
-```
-
 ## Frontend Setup
 
 ```bash
@@ -56,8 +47,61 @@ npm run dev
 
 The frontend runs at `http://localhost:5173`.
 
-Choose a negotiation scenario to generate an in-character opening message, then continue the live negotiation in the chat interface. Each negotiation turn returns the AI reply, the tactic it used, and a coaching note on your last message. End the negotiation to generate a scored report with takeaways and an annotated transcript.
-Note: tactic and coaching classification is generated per-turn by the
-language model and may occasionally vary in consistency between similar
-situations across different sessions. This is an inherent tradeoff of
-LLM-based classification rather than a fixed rule engine.
+## Frontend Routes
+
+```text
+/                     Landing / intro screen
+/scenarios            Scenario selection
+/negotiate/:sessionId Active negotiation chat
+/report/:sessionId    End-of-session report
+```
+
+The negotiation and report routes use the `sessionId` URL parameter. Refreshing or directly opening `/negotiate/:sessionId` asks the backend whether the in-memory session still exists; expired or invalid sessions show a clear error with a link back to `/scenarios`.
+
+## API Reference
+
+```text
+GET  /api/scenarios
+```
+
+Returns the four hardcoded negotiation scenarios.
+
+```text
+POST /api/start-session
+Body: { "scenario_id": "salary_negotiation" }
+```
+
+Starts a new in-memory session, calls Groq for the counterpart's opening message, and returns `session_id`, scenario metadata, and `opening_message`.
+
+```text
+GET  /api/sessions/{session_id}
+```
+
+Returns session metadata, opening message, reconstructed chat messages, and the latest coaching signal if the session still exists.
+
+```text
+POST /api/negotiate
+Body: { "session_id": "...", "message": "..." }
+```
+
+Appends the user's message, sends the full session history plus persona prompt to Groq, and returns the AI reply with structured coaching data: `tactic_used`, `tactic_explanation`, `coaching_note`, `mistake_type`, and `used_fallback`.
+
+```text
+POST /api/end-session
+Body: { "session_id": "..." }
+```
+
+Generates a structured report for the session. The backend deterministically computes `concession_count`, `tactics_faced`, and `tactics_successfully_countered` from the stored turn log, then asks Groq for the grade, anchoring quality, concession pace, and takeaways.
+
+## Current UX
+
+- Landing page introduces the practice flow.
+- Scenario selection shows a centered 2x2 grid of negotiation cards.
+- Chat route provides a compact anchored input bar, send icon button, Enter-to-send behavior, Shift+Enter newline behavior, custom themed scrollbar, and real-time coaching sidebar.
+- Report route shows the opening move, full transcript, tactic/coaching labels, grade, meters, takeaways, and a Try Again action that starts a fresh session.
+
+## Notes
+
+Sessions are stored in memory for the hackathon build. Restarting the backend clears active sessions and reports.
+
+Tactic and coaching classification is generated by the language model in the same Groq call as the AI reply. The backend stores each turn's structured coaching data for report generation, but classifications may still vary between similar conversations because they are model-generated rather than a fixed rules engine.

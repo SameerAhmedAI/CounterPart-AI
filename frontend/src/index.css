@@ -35,6 +35,29 @@ textarea {
   animation: screen-fade 260ms ease-out;
 }
 
+.themed-scrollbar {
+  scrollbar-color: #B8863E transparent;
+  scrollbar-width: thin;
+}
+
+.themed-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.themed-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.themed-scrollbar::-webkit-scrollbar-thumb {
+  background: #B8863E;
+  border: 2px solid #252321;
+  border-radius: 999px;
+}
+
+.themed-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #D0A15A;
+}
+
 @keyframes screen-fade {
   from {
     opacity: 0;
