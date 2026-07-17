@@ -232,30 +232,6 @@ def parse_report_response(
     }
 
 
-@app.post("/api/ping-gpt")
-def ping_gpt():
-    client = get_groq_client()
-
-    try:
-        response = client.chat.completions.create(
-            model=settings.groq_model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": "You are a concise API connectivity test for Counterpart.",
-                },
-                {
-                    "role": "user",
-                    "content": "Reply with one sentence confirming the Groq connection works.",
-                },
-            ],
-        )
-    except OpenAIError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
-    return response.model_dump(mode="json")
-
-
 @app.get("/api/scenarios")
 def scenarios():
     return {"scenarios": list_scenarios()}

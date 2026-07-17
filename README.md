@@ -1,6 +1,6 @@
 # Counterpart
 
-Counterpart is an AI negotiation sparring partner. This scaffold sets up a FastAPI backend and a Vite + React + Tailwind frontend with scenario selection, persona-driven session starts, and an end-to-end Groq connection test.
+Counterpart is an AI negotiation sparring partner. This scaffold sets up a FastAPI backend and a Vite + React + Tailwind frontend with scenario selection, persona-driven session starts, live coaching, and an end-of-session report.
 
 ## Why Groq
 
@@ -37,12 +37,6 @@ uvicorn app.main:app --reload
 
 The backend runs at `http://127.0.0.1:8000`.
 
-Test endpoint:
-
-```bash
-POST http://127.0.0.1:8000/api/ping-gpt
-```
-
 Scenario endpoints:
 
 ```bash
@@ -62,7 +56,7 @@ npm run dev
 
 The frontend runs at `http://localhost:5173`.
 
-Choose a negotiation scenario to generate an in-character opening message, then continue the live negotiation in the chat interface. Each negotiation turn returns the AI reply, the tactic it used, and a coaching note on your last message. End the negotiation to generate a scored report with takeaways and an annotated transcript. You can also click **Test Groq Connection** to call the FastAPI endpoint and display the raw JSON response from Groq.
+Choose a negotiation scenario to generate an in-character opening message, then continue the live negotiation in the chat interface. Each negotiation turn returns the AI reply, the tactic it used, and a coaching note on your last message. End the negotiation to generate a scored report with takeaways and an annotated transcript.
 Note: tactic and coaching classification is generated per-turn by the
 language model and may occasionally vary in consistency between similar
 situations across different sessions. This is an inherent tradeoff of
