@@ -27,6 +27,7 @@ MISTAKE_VALUES = {
     "no_anchor",
     "good_move",
     "missed_reframe",
+    "resisted_pressure",
     "none",
 }
 
@@ -156,7 +157,48 @@ def coerce_takeaways(value: object) -> list[str]:
     return (takeaways + fallback_takeaways)[:3]
 
 
-def parse_report_response(raw_content: str, tactics_faced: list[str]) -> dict[str, object]:
+def is_resolved_reframe(turn: object) -> bool:
+    if not isinstance(turn, dict):
+        return False
+
+    if turn.get("mistake_type") != "missed_reframe":
+        return False
+
+    coaching_note = turn.get("coaching_note")
+
+    if not isinstance(coaching_note, str):
+        return False
+
+    resolved_terms = ("countered", "reframed", "redirected", "handled", "responded well")
+    lowered_note = coaching_note.lower()
+
+    return any(term in lowered_note for term in resolved_terms)
+
+
+def compute_tactics_successfully_countered(turns: list[object]) -> int:
+    total = 0
+
+    for index, turn in enumerate(turns[:-1]):
+        if not isinstance(turn, dict) or turn.get("tactic_used") == "none":
+            continue
+
+        following_turn = turns[index + 1]
+
+        if not isinstance(following_turn, dict):
+            continue
+
+        if following_turn.get("mistake_type") == "good_move" or is_resolved_reframe(following_turn):
+            total += 1
+
+    return total
+
+
+def parse_report_response(
+    raw_content: str,
+    tactics_faced: list[str],
+    concession_count: int,
+    tactics_successfully_countered: int,
+) -> dict[str, object]:
     try:
         parsed = json.loads(raw_content)
     except json.JSONDecodeError:
@@ -174,15 +216,15 @@ def parse_report_response(raw_content: str, tactics_faced: list[str]) -> dict[st
             maximum=10,
         ),
         "concession_count": coerce_int(
-            parsed.get("concession_count"),
-            default=0,
+            concession_count,
+            default=concession_count,
             minimum=0,
         ),
         "concession_pace": coerce_pace(parsed.get("concession_pace")),
         "tactics_faced": tactics_faced,
         "tactics_successfully_countered": coerce_int(
-            parsed.get("tactics_successfully_countered"),
-            default=0,
+            tactics_successfully_countered,
+            default=tactics_successfully_countered,
             minimum=0,
         ),
         "takeaways": coerce_takeaways(parsed.get("takeaways")),
@@ -320,7 +362,7 @@ def negotiate(payload: NegotiateRequest):
         'reciprocity_pressure|good_cop_bad_cop|silence_pressure|reframing|none",'
         '"tactic_explanation":"string","coaching_note":"string",'
         '"mistake_type":"unearned_concession|weak_anchor|no_anchor|good_move|'
-        'missed_reframe|none"}. The reply must be the in-character negotiation '
+        'missed_reframe|resisted_pressure|none"}. The reply must be the in-character negotiation '
         "response only. tactic_used must describe the tactic you used in that reply. "
         "tactic_explanation must be one plain-language sentence. coaching_note must "
         "directly analyze only the user's most recent message in one sentence. "
@@ -335,7 +377,29 @@ def negotiate(payload: NegotiateRequest):
         "Another good_move: 'I have a competing offer at $148k, so I would need "
         "$150k or a signing bonus to accept this week.' Another good_move: "
         "'If I commit to a 12-month contract and reduce scope to these three "
-        "deliverables, I can do it for $8,500.'"
+        "deliverables, I can do it for $8,500.' If your reply as the AI counterpart "
+        "concedes any ground, such as moving the number, adding value, or softening "
+        "your position, in direct response to the user's message, and the user's "
+        "message did not introduce new leverage, no new data, no new competing "
+        "offer, no new value trade, and no new justification beyond repeating or "
+        "rephrasing a prior request, then mistake_type must be unearned_concession. "
+        "This applies regardless of whether the user phrased it as a direct demand, "
+        "casual pressure like 'meet me halfway', a repeated ask, or 'just give me X'. "
+        "Do not default to none just because the message does not resemble a bare "
+        "number or emotional appeal. Pressure tactics without leverage are also "
+        "unearned_concession when your own reply concedes in response; classify the "
+        "user's move based on whether your same-turn reply gave ground without new "
+        "leverage, not only on the surface phrasing of the user's message. Use "
+        "resisted_pressure when the user attempted to gain ground through pressure "
+        "alone, such as a repeated ask, 'meet me halfway', or casual pressure with "
+        "no new leverage, and your same-turn reply correctly held firm without "
+        "conceding. resisted_pressure is positive but distinct from good_move: it "
+        "means the user's pressure move failed because it lacked leverage, not that "
+        "the user made a strong, well-supported negotiation move. When mistake_type "
+        "is resisted_pressure, coaching_note must explain that the move did not work "
+        "because it was pressure without new leverage and therefore did not move the "
+        "offer or terms. Keep none reserved only for genuinely neutral or low-content "
+        "messages."
     )
 
     client = get_groq_client()
@@ -413,23 +477,35 @@ def end_session(payload: EndSessionRequest):
             and turn.get("tactic_used") != "none"
         }
     )
+    concession_count = sum(
+        1
+        for turn in turns
+        if isinstance(turn, dict) and turn.get("mistake_type") == "unearned_concession"
+    )
+    tactics_successfully_countered = compute_tactics_successfully_countered(turns)
 
     report_prompt = (
         "You are Counterpart's negotiation coach. Generate an end-of-session "
         "report from the provided turn log. Return only a valid JSON object with "
         "this exact shape: "
         '{"overall_grade":"A|B|C|D|F","anchoring_quality":1,'
-        '"concession_count":0,"concession_pace":"too fast|appropriate|too slow",'
-        '"tactics_faced":["string"],"tactics_successfully_countered":0,'
+        '"concession_pace":"too fast|appropriate|too slow",'
         '"takeaways":["string","string","string"]}. '
-        "tactics_faced must exactly match the provided tactics_faced list; do not "
-        "invent or reclassify tactics. The three takeaways must be specific, "
-        "actionable, and reference actual user messages or counterpart replies from "
-        "this conversation rather than generic negotiation advice."
+        "Do not calculate or invent concession_count, tactics_faced, or "
+        "tactics_successfully_countered; those exact values are provided as known "
+        "facts for you to reference. The three takeaways must be specific, actionable, "
+        "and reference actual user messages or counterpart replies from this "
+        "conversation rather than generic negotiation advice."
     )
 
     report_input = {
         "scenario_id": session["scenario_id"],
+        "opening_message": session["opening_message"],
+        "known_facts": {
+            "concession_count": concession_count,
+            "tactics_faced": tactics_faced,
+            "tactics_successfully_countered": tactics_successfully_countered,
+        },
         "tactics_faced": tactics_faced,
         "turns": turns,
     }
@@ -455,11 +531,17 @@ def end_session(payload: EndSessionRequest):
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     raw_content = response.choices[0].message.content or ""
-    report = parse_report_response(raw_content, tactics_faced)
+    report = parse_report_response(
+        raw_content,
+        tactics_faced,
+        concession_count,
+        tactics_successfully_countered,
+    )
 
     return {
         "session_id": payload.session_id,
         "scenario_id": session["scenario_id"],
+        "opening_message": session["opening_message"],
         "report": report,
         "turns": turns,
     }

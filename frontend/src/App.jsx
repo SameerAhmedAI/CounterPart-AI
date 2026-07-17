@@ -353,6 +353,22 @@ function App() {
               Transcript
             </p>
             <div className="mt-5 flex flex-col gap-5">
+              <div className="rounded-md border border-emerald-500/30 bg-emerald-950/20 p-4">
+                <p className="text-xs font-semibold uppercase tracking-[0.14em] text-emerald-300">
+                  Opening move
+                </p>
+                <div className="mt-3 flex justify-start">
+                  <div className="max-w-[82%] rounded-md border border-zinc-700 bg-zinc-900 px-4 py-3 text-sm leading-6 text-zinc-100">
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                      Counterpart
+                    </p>
+                    <p className="whitespace-pre-wrap">
+                      {sessionReport.opening_message}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
               {sessionReport.turns.map((turn, index) => (
                 <div
                   key={`${turn.user_message}-${index}`}
@@ -405,10 +421,12 @@ function App() {
 
   if (selectedSession) {
     const isGoodMove = latestCoaching?.mistakeType === "good_move";
+    const isResistedPressure = latestCoaching?.mistakeType === "resisted_pressure";
     const hasMistake =
       latestCoaching &&
       latestCoaching.mistakeType !== "none" &&
-      latestCoaching.mistakeType !== "good_move";
+      latestCoaching.mistakeType !== "good_move" &&
+      latestCoaching.mistakeType !== "resisted_pressure";
 
     return (
       <main className="min-h-screen bg-zinc-950 px-6 py-10 text-zinc-100">
@@ -544,6 +562,8 @@ function App() {
                     className={`rounded-md border p-4 ${
                       isGoodMove
                         ? "border-emerald-500/50 bg-emerald-950/30"
+                        : isResistedPressure
+                          ? "border-sky-500/50 bg-sky-950/30"
                         : hasMistake
                           ? "border-amber-500/50 bg-amber-950/30"
                           : "border-zinc-700 bg-zinc-950"
@@ -556,6 +576,8 @@ function App() {
                       className={`mt-2 text-sm font-semibold ${
                         isGoodMove
                           ? "text-emerald-200"
+                          : isResistedPressure
+                            ? "text-sky-200"
                           : hasMistake
                             ? "text-amber-200"
                             : "text-zinc-200"
