@@ -10,6 +10,12 @@ import {
   useParams,
 } from "react-router-dom";
 
+const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "";
+
+function apiUrl(path) {
+  return `${API_BASE_URL}${path}`;
+}
+
 const coachingStyles = {
   good_move: {
     label: "Good Move",
@@ -101,7 +107,7 @@ function ScenarioRoute() {
   useEffect(() => {
     async function loadScenarios() {
       try {
-        const response = await fetch("/api/scenarios");
+        const response = await fetch(apiUrl("/api/scenarios"));
         const data = await response.json();
 
         if (!response.ok) {
@@ -126,7 +132,7 @@ function ScenarioRoute() {
     setError("");
 
     try {
-      const response = await fetch("/api/start-session", {
+      const response = await fetch(apiUrl("/api/start-session"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -224,7 +230,7 @@ function NegotiationRoute() {
       setError("");
 
       try {
-        const response = await fetch(`/api/sessions/${sessionId}`);
+        const response = await fetch(apiUrl(`/api/sessions/${sessionId}`));
         const data = await response.json();
 
         if (!response.ok) {
@@ -296,7 +302,7 @@ function NegotiationRoute() {
     ]);
 
     try {
-      const response = await fetch("/api/negotiate", {
+      const response = await fetch(apiUrl("/api/negotiate"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -354,7 +360,7 @@ function NegotiationRoute() {
     setError("");
 
     try {
-      const response = await fetch("/api/end-session", {
+      const response = await fetch(apiUrl("/api/end-session"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -443,7 +449,7 @@ function ReportRoute() {
 
     async function loadReport() {
       try {
-        const response = await fetch("/api/end-session", {
+          const response = await fetch(apiUrl("/api/end-session"), {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -491,7 +497,7 @@ function ReportRoute() {
     setError("");
 
     try {
-      const response = await fetch("/api/start-session", {
+      const response = await fetch(apiUrl("/api/start-session"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

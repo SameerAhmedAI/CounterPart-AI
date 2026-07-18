@@ -35,7 +35,7 @@ app = FastAPI(title="Counterpart API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.frontend_origin],
+    allow_origins=settings.frontend_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -53,6 +53,11 @@ class NegotiateRequest(BaseModel):
 
 class EndSessionRequest(BaseModel):
     session_id: str
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}
 
 
 def serialize_scenario(scenario_id: object) -> dict[str, str]:
