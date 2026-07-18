@@ -576,48 +576,162 @@ function SessionNotFound({ message }) {
 }
 
 function IntroScreen({ onStart }) {
+  const landingCardClass =
+    "h-full border border-[#4A3F33] bg-[#252321] px-6 py-6 transition duration-200 hover:-translate-y-0.5 hover:border-[#B8863E] hover:bg-[#2B2825] hover:shadow-[0_14px_30px_rgba(0,0,0,0.18)]";
+
   return (
-    <section className="screen-panel flex min-h-[calc(100vh-3rem)] w-full flex-col items-center justify-center gap-12 py-10">
-      <div className="flex max-w-5xl flex-col items-center text-center">
-        <p className="font-sans text-xs font-semibold uppercase tracking-[0.22em] text-[#B8863E]">
-          Counterpart
-        </p>
-        <h1 className="mt-4 max-w-5xl font-serif text-5xl font-semibold leading-[0.95] text-[#F1E7DA] sm:text-6xl lg:text-7xl xl:text-8xl">
-          Practice at the table before the stakes are real.
-        </h1>
-        <p className="mt-6 max-w-3xl font-sans text-base leading-8 text-[#D0C3B4] sm:text-lg">
-          Counterpart puts you across from a resistant AI negotiator with a clear role, leverage, and walk-away point. Pick a scenario, make your case, then read the pressure, tactics, and concessions as they happen.
-        </p>
-        <p className="mt-4 max-w-3xl font-sans text-base leading-8 text-[#B9AB99]">
-          At the end, you get a scored transcript that shows where you anchored well, where you gave ground, and how to improve the next pass.
-        </p>
-        <button
-          type="button"
-          onClick={onStart}
-          className="mt-8 w-fit rounded-md bg-[#B8863E] px-6 py-3 font-sans text-sm font-bold uppercase tracking-[0.12em] text-[#1C1B1A] transition duration-200 hover:bg-[#D0A15A] focus:outline-none focus:ring-2 focus:ring-[#E8DED2] focus:ring-offset-2 focus:ring-offset-[#1C1B1A]"
-        >
-          Start Practicing
-        </button>
+    <section className="screen-panel w-full">
+      <div className="flex min-h-[calc(100svh-3rem)] w-full flex-col items-center justify-center pb-14 pt-10 sm:pb-16 sm:pt-14 xl:min-h-[calc(100vh-3rem)]">
+        <div className="flex w-full max-w-6xl flex-col items-center text-center">
+          <p className="font-sans text-xs font-semibold uppercase tracking-[0.22em] text-[#B8863E]">
+            Counterpart
+          </p>
+          <h1 className="mt-4 max-w-5xl font-serif text-5xl font-semibold leading-[0.95] text-[#F1E7DA] sm:text-6xl lg:text-7xl xl:text-8xl">
+            Practice at the table before the stakes are real.
+          </h1>
+          <p className="mt-6 max-w-3xl font-sans text-base leading-8 text-[#D0C3B4] sm:text-lg">
+            Counterpart puts you across from a resistant AI negotiator with a clear role, leverage, and walk-away point. Pick a scenario, make your case, then read the pressure, tactics, and concessions as they happen.
+          </p>
+          <button
+            type="button"
+            onClick={onStart}
+            className="mt-8 w-fit rounded-md bg-[#B8863E] px-6 py-3 font-sans text-sm font-bold uppercase tracking-[0.12em] text-[#1C1B1A] transition duration-200 hover:bg-[#D0A15A] focus:outline-none focus:ring-2 focus:ring-[#E8DED2] focus:ring-offset-2 focus:ring-offset-[#1C1B1A]"
+          >
+            Start Practicing
+          </button>
+        </div>
+
       </div>
 
-      <aside className="grid w-full max-w-5xl gap-5 border-t border-[#4A3F33] bg-[#252321] px-6 py-6 text-[#E8DED2] sm:grid-cols-3 lg:px-8">
-        <p className="font-sans text-xs font-bold uppercase tracking-[0.18em] text-[#B8863E]">
-          Table read
-        </p>
-        <div className="grid gap-5 sm:col-span-2 sm:grid-cols-3">
+      <section className="mx-auto w-full max-w-6xl border-t border-[#B8863E]/45 py-14 sm:py-16">
+        <aside className="flex flex-col items-center text-center text-[#E8DED2]">
+          <p className="font-sans text-xs font-bold uppercase tracking-[0.18em] text-[#B8863E]">
+            Table read
+          </p>
+          <div className="mt-7 grid w-full max-w-5xl gap-5 sm:grid-cols-3">
+            {[
+              ["Anchor", "Open with a number and a reason."],
+              ["Pressure", "Spot when the other side is testing resolve."],
+              ["Trade", "Move only when value moves with you."],
+            ].map(([title, copy]) => (
+              <div key={title} className={`${landingCardClass} border-l-2 pl-4`}>
+                <p className="font-serif text-2xl font-semibold">{title}</p>
+                <p className="mt-1 font-sans text-sm leading-6 text-[#B9AB99]">{copy}</p>
+              </div>
+            ))}
+          </div>
+        </aside>
+      </section>
+
+      <LandingSection eyebrow="How it works" title="Train the full negotiation loop.">
+        <div className="grid gap-5 md:grid-cols-3">
           {[
-            ["Anchor", "Open with a number and a reason."],
-            ["Pressure", "Spot when the other side is testing resolve."],
-            ["Trade", "Move only when value moves with you."],
+            [
+              "1. Pick your scenario",
+              "Choose a realistic negotiation table with a counterpart who has incentives, constraints, and leverage.",
+            ],
+            [
+              "2. Negotiate live",
+              "Make your case in chat while the AI counterpart pushes back with role-specific pressure and tactics.",
+            ],
+            [
+              "3. Get a scored transcript",
+              "End the session to review your moves, concessions, tactics faced, and concrete takeaways.",
+            ],
           ].map(([title, copy]) => (
-            <div key={title} className="border-l-2 border-[#B8863E] pl-4">
-              <p className="font-serif text-2xl font-semibold">{title}</p>
-              <p className="mt-1 font-sans text-sm leading-6 text-[#B9AB99]">{copy}</p>
-            </div>
+            <article key={title} className={landingCardClass}>
+              <p className="font-serif text-2xl font-semibold leading-tight text-[#F1E7DA]">{title}</p>
+              <p className="mt-3 font-sans text-sm leading-6 text-[#B9AB99]">{copy}</p>
+            </article>
           ))}
         </div>
-      </aside>
+      </LandingSection>
+
+      <LandingSection eyebrow="Scenario preview" title="Practice against different kinds of pressure.">
+        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            [
+              "Salary Negotiation",
+              "Your manager has a budget ceiling they won't admit to.",
+            ],
+            [
+              "Rent Negotiation",
+              "Your landlord wants an increase while avoiding a vacancy.",
+            ],
+            [
+              "Freelance Contract Pricing",
+              "A client values the work but keeps pushing the fee down.",
+            ],
+            [
+              "Vendor Price Dispute",
+              "A supplier defends a higher quote while you protect margin.",
+            ],
+          ].map(([title, copy]) => (
+            <article key={title} className={landingCardClass}>
+              <p className="font-serif text-2xl font-semibold leading-tight text-[#F1E7DA]">{title}</p>
+              <p className="mt-3 font-sans text-sm leading-6 text-[#B9AB99]">{copy}</p>
+            </article>
+          ))}
+        </div>
+      </LandingSection>
+
+      <footer className="mx-auto mt-14 grid w-full max-w-6xl gap-5 border-t border-[#B8863E]/45 py-8 text-center sm:grid-cols-3 sm:items-center sm:text-left">
+        <Link
+          to="/"
+          className="font-sans text-xs font-semibold uppercase tracking-[0.22em] text-[#B8863E] transition duration-200 hover:text-[#D0A15A]"
+        >
+          Counterpart
+        </Link>
+        <p className="hidden">
+          Practice the hard conversations before they happen. Counterpart © 2026
+        </p>
+        <p className="font-sans text-sm leading-6 text-[#B9AB99] sm:whitespace-nowrap sm:text-center">
+          Practice the hard conversations before they happen.{" "}
+          <Link to="/" className="transition duration-200 hover:text-[#D0A15A]">
+            Counterpart
+          </Link>{" "}
+          © 2026
+        </p>
+        <a
+          href="https://github.com/SameerAhmedAI/CounterPart-AI"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="Counterpart GitHub repository"
+          className="mx-auto inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#4A3F33] text-[#D0C3B4] transition duration-200 hover:border-[#B8863E] hover:text-[#F1E7DA] sm:mx-0 sm:ml-auto"
+        >
+          <GithubIcon />
+        </a>
+      </footer>
     </section>
+  );
+}
+
+function LandingSection({ eyebrow, title, children }) {
+  return (
+    <section className="mx-auto w-full max-w-6xl border-t border-[#B8863E]/45 py-14 sm:py-16">
+      <div className="mx-auto mb-7 max-w-3xl text-center">
+        <p className="font-sans text-xs font-semibold uppercase tracking-[0.22em] text-[#B8863E]">
+          {eyebrow}
+        </p>
+        <h2 className="mt-3 font-serif text-3xl font-semibold leading-tight text-[#F1E7DA] sm:text-4xl">
+          {title}
+        </h2>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function GithubIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      className="h-5 w-5"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+    >
+      <path d="M12 2C6.48 2 2 6.58 2 12.24c0 4.52 2.87 8.35 6.84 9.71.5.09.68-.22.68-.49 0-.24-.01-.88-.01-1.73-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.3 9.3 0 0 1 12 6.98c.85 0 1.7.12 2.5.34 1.9-1.33 2.74-1.05 2.74-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.8-4.57 5.05.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.59.69.49A10.16 10.16 0 0 0 22 12.24C22 6.58 17.52 2 12 2Z" />
+    </svg>
   );
 }
 
