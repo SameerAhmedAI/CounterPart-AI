@@ -3,10 +3,17 @@ import json
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI, OpenAIError
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from uuid import uuid4
 
 from app.config import get_settings
+from app.custom_scenarios import (
+    CustomScenarioLimitError,
+    create_custom_scenario,
+    delete_custom_scenario,
+    get_custom_scenario,
+    list_custom_scenarios,
+)
 from app.scenarios import get_scenario, list_scenarios
 
 
@@ -55,25 +62,52 @@ class EndSessionRequest(BaseModel):
     session_id: str
 
 
+class CustomScenarioRequest(BaseModel):
+    title: str = Field(min_length=2, max_length=120)
+    context: str = Field(min_length=10, max_length=1200)
+    persona_name: str = Field(min_length=2, max_length=80)
+    persona_role: str = Field(min_length=2, max_length=160)
+    personality_traits: str = Field(min_length=3, max_length=1000)
+    batna: str = Field(min_length=3, max_length=1500)
+    opening_move_hint: str = Field(min_length=3, max_length=1200)
+
+    @field_validator("*")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        stripped = value.strip()
+
+        if not stripped:
+            raise ValueError("Field cannot be blank.")
+
+        return stripped
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
 
 
-def serialize_scenario(scenario_id: object) -> dict[str, str]:
-    scenario = get_scenario(str(scenario_id))
+def get_available_scenario(scenario_id: str):
+    return get_scenario(scenario_id) or get_custom_scenario(scenario_id)
+
+
+def serialize_scenario(scenario_id: object) -> dict[str, str | bool]:
+    scenario_id_string = str(scenario_id)
+    scenario = get_available_scenario(scenario_id_string)
 
     if scenario is None:
         return {
-            "id": str(scenario_id),
+            "id": scenario_id_string,
             "title": "Negotiation Session",
             "context": "This session is still active, but its scenario metadata could not be loaded.",
+            "is_custom": scenario_id_string.startswith("custom-"),
         }
 
     return {
         "id": scenario.id,
         "title": scenario.title,
         "context": scenario.context,
+        "is_custom": scenario.id.startswith("custom-"),
     }
 
 
@@ -256,7 +290,44 @@ def parse_report_response(
 
 @app.get("/api/scenarios")
 def scenarios():
-    return {"scenarios": list_scenarios()}
+    built_in_scenarios = [
+        {**scenario, "is_custom": False}
+        for scenario in list_scenarios()
+    ]
+    custom_scenarios = [
+        {
+            "id": scenario["id"],
+            "title": scenario["title"],
+            "context": scenario["context"],
+            "is_custom": True,
+        }
+        for scenario in list_custom_scenarios()
+    ]
+
+    return {"scenarios": [*built_in_scenarios, *custom_scenarios]}
+
+
+@app.get("/api/custom-scenarios")
+def get_custom_scenarios():
+    return {"scenarios": list_custom_scenarios()}
+
+
+@app.post("/api/custom-scenarios", status_code=201)
+def save_custom_scenario(payload: CustomScenarioRequest):
+    try:
+        scenario = create_custom_scenario(payload.model_dump())
+    except CustomScenarioLimitError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return {"scenario": scenario}
+
+
+@app.delete("/api/custom-scenarios/{scenario_id}")
+def remove_custom_scenario(scenario_id: str):
+    if not delete_custom_scenario(scenario_id):
+        raise HTTPException(status_code=404, detail="Custom scenario not found.")
+
+    return {"deleted": True, "id": scenario_id}
 
 
 @app.get("/api/sessions/{session_id}")
@@ -322,7 +393,7 @@ def get_session(session_id: str):
 
 @app.post("/api/start-session")
 def start_session(payload: StartSessionRequest):
-    scenario = get_scenario(payload.scenario_id)
+    scenario = get_available_scenario(payload.scenario_id)
 
     if scenario is None:
         raise HTTPException(status_code=404, detail="Scenario not found.")

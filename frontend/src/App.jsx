@@ -11,6 +11,15 @@ import {
 } from "react-router-dom";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL?.replace(/\/$/, "") || "";
+const EMPTY_CUSTOM_SCENARIO = {
+  title: "",
+  context: "",
+  persona_name: "",
+  persona_role: "",
+  personality_traits: "",
+  batna: "",
+  opening_move_hint: "",
+};
 
 function apiUrl(path) {
   return `${API_BASE_URL}${path}`;
@@ -101,29 +110,35 @@ function IntroRoute() {
 function ScenarioRoute() {
   const [scenarios, setScenarios] = useState([]);
   const [loadingScenarioId, setLoadingScenarioId] = useState("");
+  const [deletingScenarioId, setDeletingScenarioId] = useState("");
+  const [isCustomFormOpen, setIsCustomFormOpen] = useState(false);
+  const [isSavingCustom, setIsSavingCustom] = useState(false);
+  const [customForm, setCustomForm] = useState({ ...EMPTY_CUSTOM_SCENARIO });
+  const [customError, setCustomError] = useState("");
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  useEffect(() => {
-    async function loadScenarios() {
-      try {
-        const response = await fetch(apiUrl("/api/scenarios"));
-        const data = await response.json();
+  async function loadScenarios() {
+    try {
+      const response = await fetch(apiUrl("/api/scenarios"));
+      const data = await response.json();
 
-        if (!response.ok) {
-          throw new Error(data.detail || "Scenario table unavailable.");
-        }
-
-        setScenarios(data.scenarios || []);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? `Scenario table unavailable. ${err.message} Check that the backend is running.`
-            : "Scenario table unavailable. Check that the backend is running.",
-        );
+      if (!response.ok) {
+        throw new Error(data.detail || "Scenario table unavailable.");
       }
-    }
 
+      setScenarios(data.scenarios || []);
+      setError("");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `Scenario table unavailable. ${err.message} Check that the backend is running.`
+          : "Scenario table unavailable. Check that the backend is running.",
+      );
+    }
+  }
+
+  useEffect(() => {
     loadScenarios();
   }, []);
 
@@ -162,12 +177,104 @@ function ScenarioRoute() {
     }
   }
 
+  async function createCustomScenario(event) {
+    event.preventDefault();
+
+    if (isSavingCustom) {
+      return;
+    }
+
+    setIsSavingCustom(true);
+    setCustomError("");
+
+    try {
+      const response = await fetch(apiUrl("/api/custom-scenarios"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(customForm),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        const detail = Array.isArray(data.detail)
+          ? data.detail.map((item) => item.msg).join(" ")
+          : data.detail;
+        throw new Error(detail || "Custom scenario could not be saved.");
+      }
+
+      await loadScenarios();
+      setCustomForm({ ...EMPTY_CUSTOM_SCENARIO });
+      setIsCustomFormOpen(false);
+    } catch (err) {
+      setCustomError(
+        err instanceof Error
+          ? `Custom scenario could not be saved. ${err.message}`
+          : "Custom scenario could not be saved. Check the fields and try again.",
+      );
+    } finally {
+      setIsSavingCustom(false);
+    }
+  }
+
+  async function deleteCustomScenario(scenarioId) {
+    if (!scenarioId || deletingScenarioId) {
+      return;
+    }
+
+    setDeletingScenarioId(scenarioId);
+    setError("");
+
+    try {
+      const response = await fetch(
+        apiUrl(`/api/custom-scenarios/${encodeURIComponent(scenarioId)}`),
+        { method: "DELETE" },
+      );
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Custom scenario could not be deleted.");
+      }
+
+      await loadScenarios();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `Custom scenario could not be deleted. ${err.message}`
+          : "Custom scenario could not be deleted. Check the backend and try again.",
+      );
+    } finally {
+      setDeletingScenarioId("");
+    }
+  }
+
   return (
     <ScenarioScreen
       scenarios={scenarios}
       loadingScenarioId={loadingScenarioId}
+      deletingScenarioId={deletingScenarioId}
+      isCustomFormOpen={isCustomFormOpen}
+      isSavingCustom={isSavingCustom}
+      customForm={customForm}
+      customError={customError}
       error={error}
       onStartSession={startSession}
+      onOpenCustomForm={() => {
+        setCustomError("");
+        setIsCustomFormOpen(true);
+      }}
+      onCloseCustomForm={() => {
+        if (!isSavingCustom) {
+          setCustomError("");
+          setIsCustomFormOpen(false);
+        }
+      }}
+      onCustomFormChange={(field, value) =>
+        setCustomForm((current) => ({ ...current, [field]: value }))
+      }
+      onCreateCustomScenario={createCustomScenario}
+      onDeleteCustomScenario={deleteCustomScenario}
     />
   );
 }
@@ -217,6 +324,11 @@ function NegotiationRoute() {
   const [draftMessage, setDraftMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [isEnding, setIsEnding] = useState(false);
+  const [scenarios, setScenarios] = useState([]);
+  const [isScenarioMenuOpen, setIsScenarioMenuOpen] = useState(false);
+  const [isLoadingScenarios, setIsLoadingScenarios] = useState(true);
+  const [switchingScenarioId, setSwitchingScenarioId] = useState("");
+  const [scenarioMenuError, setScenarioMenuError] = useState("");
   const [error, setError] = useState("");
   const [inputError, setInputError] = useState("");
   const [isLoadingSession, setIsLoadingSession] = useState(true);
@@ -228,6 +340,24 @@ function NegotiationRoute() {
     async function loadSession() {
       setIsLoadingSession(true);
       setError("");
+      setInputError("");
+      setDraftMessage("");
+      setLatestCoaching(null);
+      setIsScenarioMenuOpen(false);
+      setScenarioMenuError("");
+
+      if (routedSession) {
+        setSelectedSession(getSessionState(routedSession, sessionId));
+        setMessages([
+          {
+            role: "assistant",
+            content: routedSession.opening_message,
+          },
+        ]);
+      } else {
+        setSelectedSession(null);
+        setMessages([]);
+      }
 
       try {
         const response = await fetch(apiUrl(`/api/sessions/${sessionId}`));
@@ -270,6 +400,46 @@ function NegotiationRoute() {
       isCurrent = false;
     };
   }, [sessionId]);
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    async function loadScenarios() {
+      setIsLoadingScenarios(true);
+
+      try {
+        const response = await fetch(apiUrl("/api/scenarios"));
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || "Scenario table unavailable.");
+        }
+
+        if (isCurrent) {
+          setScenarios(data.scenarios || []);
+          setScenarioMenuError("");
+        }
+      } catch (err) {
+        if (isCurrent) {
+          setScenarioMenuError(
+            err instanceof Error
+              ? `Scenario list unavailable. ${err.message}`
+              : "Scenario list unavailable. Check that the backend is running.",
+          );
+        }
+      } finally {
+        if (isCurrent) {
+          setIsLoadingScenarios(false);
+        }
+      }
+    }
+
+    loadScenarios();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, []);
 
   useEffect(() => {
     latestMessageRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -392,6 +562,57 @@ function NegotiationRoute() {
     }
   }
 
+  async function switchScenario(scenarioId) {
+    if (!scenarioId || switchingScenarioId || isSending || isEnding) {
+      return;
+    }
+
+    setSwitchingScenarioId(scenarioId);
+    setScenarioMenuError("");
+
+    try {
+      const response = await fetch(apiUrl("/api/start-session"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ scenario_id: scenarioId }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Session could not be opened.");
+      }
+
+      setSelectedSession(getSessionState(data, data.session_id));
+      setMessages([
+        {
+          role: "assistant",
+          content: data.opening_message,
+        },
+      ]);
+      setLatestCoaching(null);
+      setDraftMessage("");
+      setInputError("");
+      setError("");
+      setIsScenarioMenuOpen(false);
+
+      navigate(`/negotiate/${data.session_id}`, {
+        state: {
+          session: data,
+        },
+      });
+    } catch (err) {
+      setScenarioMenuError(
+        err instanceof Error
+          ? `Scenario could not be switched. ${err.message}`
+          : "Scenario could not be switched. Check that the backend is running.",
+      );
+    } finally {
+      setSwitchingScenarioId("");
+    }
+  }
+
   if (isLoadingSession && !selectedSession) {
     return <LoadingPanel message="Loading negotiation session." />;
   }
@@ -410,10 +631,16 @@ function NegotiationRoute() {
       inputError={inputError}
       isSending={isSending}
       isEnding={isEnding}
+      scenarios={scenarios}
+      isScenarioMenuOpen={isScenarioMenuOpen}
+      isLoadingScenarios={isLoadingScenarios}
+      switchingScenarioId={switchingScenarioId}
+      scenarioMenuError={scenarioMenuError}
       latestMessageRef={latestMessageRef}
       formatLabel={formatLabel}
       getCoachingStyle={getCoachingStyle}
-      onBack={() => navigate("/scenarios")}
+      onToggleScenarioMenu={() => setIsScenarioMenuOpen((isOpen) => !isOpen)}
+      onSwitchScenario={switchScenario}
       onEndSession={endSession}
       onDraftChange={(value) => {
         setDraftMessage(value);
@@ -735,47 +962,263 @@ function GithubIcon() {
   );
 }
 
-function ScenarioScreen({ scenarios, loadingScenarioId, error, onStartSession }) {
-  return (
-    <section className="screen-panel py-8 lg:py-10">
-      <div className="flex flex-col items-center">
-        <div className="flex max-w-3xl flex-col items-center gap-3 text-center">
-          <p className="font-sans text-xs font-semibold uppercase tracking-[0.22em] text-[#B8863E]">
-            Choose the other side
-          </p>
-          <h1 className="font-serif text-4xl font-semibold text-[#F1E7DA] sm:text-5xl">
-            Select a negotiation table.
-          </h1>
-          <p className="max-w-2xl font-sans text-base leading-7 text-[#D0C3B4]">
-            Each scenario opens with a counterpart who has their own incentives, limits, and pressure tactics.
-          </p>
-        </div>
+function ScenarioScreen({
+  scenarios,
+  loadingScenarioId,
+  deletingScenarioId,
+  isCustomFormOpen,
+  isSavingCustom,
+  customForm,
+  customError,
+  error,
+  onStartSession,
+  onOpenCustomForm,
+  onCloseCustomForm,
+  onCustomFormChange,
+  onCreateCustomScenario,
+  onDeleteCustomScenario,
+}) {
+  const customScenarioCount = scenarios.filter((scenario) => scenario.is_custom).length;
+  const customLimitReached = customScenarioCount >= 3;
 
-        <div className="mt-12 grid w-full max-w-5xl auto-rows-fr gap-5 sm:grid-cols-2">
-          {scenarios.map((scenario) => (
+  return (
+    <>
+      <section className="screen-panel py-8 lg:py-10">
+        <div className="flex flex-col items-center">
+          <div className="flex max-w-3xl flex-col items-center gap-3 text-center">
+            <p className="font-sans text-xs font-semibold uppercase tracking-[0.22em] text-[#B8863E]">
+              Choose the other side
+            </p>
+            <h1 className="font-serif text-4xl font-semibold text-[#F1E7DA] sm:text-5xl">
+              Select a negotiation table.
+            </h1>
+            <p className="max-w-2xl font-sans text-base leading-7 text-[#D0C3B4]">
+              Each scenario opens with a counterpart who has their own incentives, limits, and pressure tactics.
+            </p>
+          </div>
+
+          <div className="mt-12 grid w-full max-w-5xl auto-rows-fr gap-5 sm:grid-cols-2">
+            {scenarios.map((scenario) => (
+              <article
+                key={scenario.id}
+                className="group relative flex min-h-64 h-full flex-col rounded-md border border-[#4A3F33] bg-[#252321] text-center text-[#E8DED2] transition duration-200 hover:-translate-y-0.5 hover:border-[#B8863E]"
+              >
+                {scenario.is_custom ? (
+                  <button
+                    type="button"
+                    onClick={() => onDeleteCustomScenario(scenario.id)}
+                    disabled={Boolean(deletingScenarioId) || Boolean(loadingScenarioId)}
+                    aria-label={`Delete ${scenario.title}`}
+                    className="absolute right-3 top-3 z-10 rounded-md border border-[#4A3F33] bg-[#1C1B1A] px-2.5 py-1.5 font-sans text-[0.62rem] font-bold uppercase tracking-[0.1em] text-[#B9AB99] transition duration-200 hover:border-[#9C4A3C] hover:text-[#F1B8AE] disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {deletingScenarioId === scenario.id ? "Deleting..." : "Delete"}
+                  </button>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => onStartSession(scenario.id)}
+                  disabled={Boolean(loadingScenarioId) || Boolean(deletingScenarioId)}
+                  className="flex h-full min-h-64 w-full flex-col items-center justify-between rounded-md px-7 py-7 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <span className="flex flex-1 flex-col items-center justify-center">
+                    {scenario.is_custom ? (
+                      <span className="mb-3 font-sans text-[0.62rem] font-bold uppercase tracking-[0.16em] text-[#B8863E]">
+                        Custom scenario
+                      </span>
+                    ) : null}
+                    <span className="font-serif text-2xl font-semibold leading-tight">
+                      {scenario.title}
+                    </span>
+                    <span className="mt-4 block max-w-sm font-sans text-sm leading-6 text-[#B9AB99]">
+                      {scenario.context}
+                    </span>
+                  </span>
+                  <span className="mt-5 block font-sans text-xs font-bold uppercase tracking-[0.16em] text-[#B8863E]">
+                    {loadingScenarioId === scenario.id ? "Opening table..." : "Start scenario"}
+                  </span>
+                </button>
+              </article>
+            ))}
+
             <button
-              key={scenario.id}
               type="button"
-              onClick={() => onStartSession(scenario.id)}
-              disabled={Boolean(loadingScenarioId)}
-              className="group flex min-h-64 h-full flex-col items-center justify-between rounded-md border border-[#4A3F33] bg-[#252321] px-7 py-7 text-center text-[#E8DED2] transition duration-200 hover:-translate-y-0.5 hover:border-[#B8863E] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={onOpenCustomForm}
+              disabled={customLimitReached || Boolean(loadingScenarioId) || Boolean(deletingScenarioId)}
+              className="group flex min-h-64 h-full flex-col items-center justify-center rounded-md border border-dashed border-[#B8863E]/75 bg-[#1F1D1B] px-7 py-7 text-center text-[#E8DED2] transition duration-200 hover:-translate-y-0.5 hover:border-[#D0A15A] hover:bg-[#252321] active:translate-y-0 disabled:cursor-not-allowed disabled:border-[#4A3F33] disabled:bg-[#1F1D1B] disabled:opacity-60"
             >
-              <span className="flex flex-1 flex-col items-center justify-center">
-                <span className="font-serif text-2xl font-semibold leading-tight">{scenario.title}</span>
-                <span className="mt-4 block max-w-sm font-sans text-sm leading-6 text-[#B9AB99]">
-                  {scenario.context}
-                </span>
+              <span className="font-serif text-3xl font-semibold leading-tight text-[#F1E7DA]">
+                {customLimitReached ? "Custom limit reached" : "+ Add Custom Scenario"}
               </span>
-              <span className="mt-5 block font-sans text-xs font-bold uppercase tracking-[0.16em] text-[#B8863E]">
-                {loadingScenarioId === scenario.id ? "Opening table..." : "Start scenario"}
+              <span className="mt-4 max-w-sm font-sans text-sm leading-6 text-[#B9AB99]">
+                {customLimitReached
+                  ? "Three custom scenarios saved. Delete one to open another slot."
+                  : "Define the counterpart, their leverage, and their opening move."}
+              </span>
+              <span className="mt-5 font-sans text-[0.65rem] font-bold uppercase tracking-[0.16em] text-[#B8863E]">
+                {customScenarioCount} of 3 saved
               </span>
             </button>
-          ))}
+          </div>
         </div>
-      </div>
 
-      {error ? <ErrorBanner message={error} /> : null}
-    </section>
+        {error ? <ErrorBanner message={error} /> : null}
+      </section>
+
+      {isCustomFormOpen ? (
+        <CustomScenarioModal
+          values={customForm}
+          error={customError}
+          isSaving={isSavingCustom}
+          onChange={onCustomFormChange}
+          onClose={onCloseCustomForm}
+          onSubmit={onCreateCustomScenario}
+        />
+      ) : null}
+    </>
+  );
+}
+
+function CustomScenarioModal({ values, error, isSaving, onChange, onClose, onSubmit }) {
+  const fieldClass =
+    "mt-2 w-full rounded-md border border-[#4A3F33] bg-[#1C1B1A] px-3 py-2.5 font-sans text-sm text-[#E8DED2] outline-none transition duration-200 placeholder:text-[#6F6255] focus:border-[#B8863E]";
+  const labelClass =
+    "font-sans text-[0.68rem] font-bold uppercase tracking-[0.13em] text-[#B9AB99]";
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#11100F]/85 p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="custom-scenario-title"
+    >
+      <div className="themed-scrollbar max-h-[calc(100svh-2rem)] w-full max-w-3xl overflow-y-auto rounded-md border border-[#4A3F33] bg-[#252321] p-5 shadow-2xl shadow-black/40 sm:p-7">
+        <div className="flex items-start justify-between gap-5 border-b border-[#4A3F33] pb-4">
+          <div>
+            <p className="font-sans text-[0.68rem] font-bold uppercase tracking-[0.16em] text-[#B8863E]">
+              Custom table
+            </p>
+            <h2 id="custom-scenario-title" className="mt-2 font-serif text-3xl font-semibold text-[#F1E7DA]">
+              Build a counterpart.
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={isSaving}
+            className="rounded-md border border-[#4A3F33] px-3 py-2 font-sans text-[0.65rem] font-bold uppercase tracking-[0.12em] text-[#B9AB99] transition duration-200 hover:border-[#B8863E] hover:text-[#F1E7DA] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Close
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} className="mt-5 grid gap-5 sm:grid-cols-2">
+          <label className={labelClass}>
+            Scenario title
+            <input
+              required
+              maxLength={120}
+              value={values.title}
+              onChange={(event) => onChange("title", event.target.value)}
+              className={fieldClass}
+              placeholder="Partnership renewal"
+            />
+          </label>
+
+          <label className={labelClass}>
+            Persona name
+            <input
+              required
+              maxLength={80}
+              value={values.persona_name}
+              onChange={(event) => onChange("persona_name", event.target.value)}
+              className={fieldClass}
+              placeholder="Jordan Lee"
+            />
+          </label>
+
+          <label className={`${labelClass} sm:col-span-2`}>
+            User-facing context
+            <textarea
+              required
+              maxLength={1200}
+              rows={3}
+              value={values.context}
+              onChange={(event) => onChange("context", event.target.value)}
+              className={`${fieldClass} resize-y`}
+              placeholder="Describe what the user is negotiating and what is at stake."
+            />
+          </label>
+
+          <label className={labelClass}>
+            Persona role
+            <input
+              required
+              maxLength={160}
+              value={values.persona_role}
+              onChange={(event) => onChange("persona_role", event.target.value)}
+              className={fieldClass}
+              placeholder="Procurement director"
+            />
+          </label>
+
+          <label className={labelClass}>
+            Personality traits
+            <textarea
+              required
+              maxLength={1000}
+              rows={3}
+              value={values.personality_traits}
+              onChange={(event) => onChange("personality_traits", event.target.value)}
+              className={`${fieldClass} resize-y`}
+              placeholder="Analytical, patient, skeptical of unsupported claims"
+            />
+          </label>
+
+          <label className={`${labelClass} sm:col-span-2`}>
+            BATNA and walk-away point
+            <textarea
+              required
+              maxLength={1500}
+              rows={3}
+              value={values.batna}
+              onChange={(event) => onChange("batna", event.target.value)}
+              className={`${fieldClass} resize-y`}
+              placeholder="State the best alternative and the terms this counterpart will not cross."
+            />
+          </label>
+
+          <label className={`${labelClass} sm:col-span-2`}>
+            Opening move hint
+            <textarea
+              required
+              maxLength={1200}
+              rows={3}
+              value={values.opening_move_hint}
+              onChange={(event) => onChange("opening_move_hint", event.target.value)}
+              className={`${fieldClass} resize-y`}
+              placeholder="Describe the anchor, framing, or first demand they should make."
+            />
+          </label>
+
+          {error ? (
+            <div className="sm:col-span-2">
+              <ErrorBanner message={error} compact />
+            </div>
+          ) : null}
+
+          <div className="flex justify-end border-t border-[#4A3F33] pt-5 sm:col-span-2">
+            <button
+              type="submit"
+              disabled={isSaving}
+              className="rounded-md border border-[#B8863E] bg-[#B8863E] px-5 py-3 font-sans text-xs font-bold uppercase tracking-[0.14em] text-[#1C1B1A] transition duration-200 hover:bg-[#D0A15A] disabled:cursor-not-allowed disabled:border-[#4A3F33] disabled:bg-[#3A342E] disabled:text-[#8C7B66]"
+            >
+              {isSaving ? "Saving scenario..." : "Save custom scenario"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
@@ -788,49 +1231,118 @@ function ChatScreen({
   inputError,
   isSending,
   isEnding,
+  scenarios,
+  isScenarioMenuOpen,
+  isLoadingScenarios,
+  switchingScenarioId,
+  scenarioMenuError,
   latestMessageRef,
   formatLabel,
   getCoachingStyle,
-  onBack,
+  onToggleScenarioMenu,
+  onSwitchScenario,
   onEndSession,
   onDraftChange,
   onInputKeyDown,
   onSend,
 }) {
+  const otherScenarios = scenarios.filter(
+    (scenario) => scenario.id !== selectedSession.scenario.id,
+  );
+
   return (
-    <section className="screen-panel flex min-h-[calc(100vh-3rem)] flex-col gap-5 py-3">
-      <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
-        <button
-          type="button"
-          onClick={onBack}
-          className="min-h-11 w-fit rounded-md border border-[#4A3F33] bg-[#252321] px-5 py-3 font-sans text-xs font-bold uppercase tracking-[0.14em] text-[#D0C3B4] transition duration-200 hover:border-[#B8863E] hover:text-[#F1E7DA] active:translate-y-px"
-        >
-          Back to scenarios
-        </button>
-        <button
-          type="button"
-          onClick={onEndSession}
-          disabled={isEnding || isSending || messages.length < 2}
-          className="min-h-11 w-fit rounded-md border border-[#B8863E] bg-[#B8863E] px-5 py-3 font-sans text-xs font-bold uppercase tracking-[0.14em] text-[#1C1B1A] transition duration-200 hover:bg-[#D0A15A] active:translate-y-px disabled:cursor-not-allowed disabled:border-[#4A3F33] disabled:bg-[#3A342E] disabled:text-[#8C7B66]"
-        >
-          {isEnding ? "Preparing report..." : "End negotiation"}
-        </button>
-      </div>
+    <section className="screen-panel flex h-[calc(100svh-3rem)] min-h-0 flex-col gap-3 overflow-hidden">
+      <header className="flex shrink-0 flex-col gap-3 border-b border-[#4A3F33] pb-3 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="truncate font-serif text-2xl font-semibold text-[#F1E7DA]">
+              {selectedSession.scenario.title}
+            </h1>
+            <p
+              className="max-w-full truncate font-sans text-[0.62rem] font-semibold uppercase tracking-[0.14em] text-[#B8863E]"
+              title={selectedSession.session_id}
+            >
+              Session {selectedSession.session_id}
+            </p>
+          </div>
+          <p
+            className="mt-1 max-w-4xl truncate font-sans text-sm text-[#B9AB99]"
+            title={selectedSession.scenario.context}
+          >
+            {selectedSession.scenario.context}
+          </p>
+        </div>
 
-      <div>
-        <p className="font-sans text-xs font-semibold uppercase tracking-[0.2em] text-[#B8863E]">
-          Session {selectedSession.session_id}
-        </p>
-        <h1 className="mt-2 font-serif text-4xl font-semibold text-[#F1E7DA]">
-          {selectedSession.scenario.title}
-        </h1>
-        <p className="mt-3 max-w-2xl font-sans text-sm leading-7 text-[#B9AB99]">
-          {selectedSession.scenario.context}
-        </p>
-      </div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={onToggleScenarioMenu}
+              disabled={isSending || isEnding || Boolean(switchingScenarioId)}
+              aria-expanded={isScenarioMenuOpen}
+              aria-haspopup="menu"
+              className="h-10 rounded-md border border-[#4A3F33] bg-[#252321] px-4 font-sans text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[#D0C3B4] transition duration-200 hover:border-[#B8863E] hover:text-[#F1E7DA] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {switchingScenarioId ? "Opening scenario..." : "Choose Another Scenario"}
+            </button>
 
-      <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[minmax(0,1fr)_22rem] xl:grid-cols-[minmax(0,1fr)_24rem]">
-        <div className="flex min-h-0 flex-col rounded-md border border-[#4A3F33] bg-[#252321]">
+            {isScenarioMenuOpen ? (
+              <div
+                role="menu"
+                className="absolute right-0 top-full z-30 mt-2 w-[min(23rem,calc(100vw-2.5rem))] rounded-md border border-[#4A3F33] bg-[#252321] p-2 shadow-2xl shadow-black/30"
+              >
+                <p className="px-3 py-2 font-sans text-[0.65rem] font-bold uppercase tracking-[0.14em] text-[#8C7B66]">
+                  Open a fresh table
+                </p>
+
+                {isLoadingScenarios ? (
+                  <p className="px-3 py-3 font-sans text-sm text-[#B9AB99]">Loading scenarios...</p>
+                ) : null}
+
+                {!isLoadingScenarios && otherScenarios.length ? (
+                  <div className="space-y-1">
+                    {otherScenarios.map((scenario) => (
+                      <button
+                        key={scenario.id}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => onSwitchScenario(scenario.id)}
+                        disabled={Boolean(switchingScenarioId)}
+                        className="w-full rounded-md border border-transparent px-3 py-3 text-left transition duration-200 hover:border-[#B8863E] hover:bg-[#2A2825] disabled:cursor-wait disabled:opacity-50"
+                      >
+                        <span className="block font-serif text-lg font-semibold text-[#F1E7DA]">
+                          {scenario.title}
+                        </span>
+                        <span className="mt-1 block truncate font-sans text-xs text-[#B9AB99]">
+                          {scenario.context}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+
+                {scenarioMenuError ? (
+                  <p className="m-2 rounded-md border border-[#9C4A3C] bg-[#9C4A3C]/15 p-3 font-sans text-xs leading-5 text-[#F1B8AE]">
+                    {scenarioMenuError}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <button
+            type="button"
+            onClick={onEndSession}
+            disabled={isEnding || isSending || Boolean(switchingScenarioId) || messages.length < 2}
+            className="h-10 rounded-md border border-[#B8863E] bg-[#B8863E] px-4 font-sans text-[0.68rem] font-bold uppercase tracking-[0.12em] text-[#1C1B1A] transition duration-200 hover:bg-[#D0A15A] active:translate-y-px disabled:cursor-not-allowed disabled:border-[#4A3F33] disabled:bg-[#3A342E] disabled:text-[#8C7B66]"
+          >
+            {isEnding ? "Preparing report..." : "End negotiation"}
+          </button>
+        </div>
+      </header>
+
+      <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1.35fr)_minmax(10rem,0.75fr)] gap-3 lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-1 xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <div className="flex min-h-0 flex-col overflow-hidden rounded-md border border-[#4A3F33] bg-[#252321]">
           <div className="themed-scrollbar flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-4 pr-3 sm:p-5 sm:pr-4">
             {messages.map((message, index) => (
               <MessageBubble
@@ -942,7 +1454,7 @@ function CoachingReadout({ latestCoaching, formatLabel, getCoachingStyle }) {
   const moveLabel = latestCoaching ? formatLabel(latestCoaching.mistakeType) : "No Signal";
 
   return (
-    <aside className="rounded-md border border-[#4A3F33] bg-[#252321] p-5 text-[#E8DED2]">
+    <aside className="themed-scrollbar min-h-0 overflow-y-auto rounded-md border border-[#4A3F33] bg-[#252321] p-5 text-[#E8DED2]">
       <p className="font-sans text-xs font-bold uppercase tracking-[0.18em] text-[#B8863E]">
         Live readout
       </p>

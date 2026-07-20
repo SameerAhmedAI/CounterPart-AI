@@ -19,6 +19,10 @@ venv/
 .coverage
 coverage/
 htmlcov/
+backend/counterpart.db
+backend/counterpart.db-*
+*.sqlite
+*.sqlite3
 .DS_Store
 *.log
 npm-debug.log*
