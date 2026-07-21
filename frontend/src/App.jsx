@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { LoaderCircle, Volume2, VolumeX } from "lucide-react";
 import {
   BrowserRouter,
   Link,
@@ -23,6 +24,27 @@ const EMPTY_CUSTOM_SCENARIO = {
 
 function apiUrl(path) {
   return `${API_BASE_URL}${path}`;
+}
+
+function selectPreferredSpeechVoice(voices) {
+  if (!voices.length) {
+    return null;
+  }
+
+  const englishVoices = voices.filter((voice) => /^en([-_]|$)/i.test(voice.lang));
+  const naturalVoicePattern =
+    /natural|neural|premium|enhanced|online|aria|jenny|samantha|daniel|serena|ava|andrew/i;
+
+  return (
+    englishVoices.find(
+      (voice) => !voice.default && naturalVoicePattern.test(voice.name),
+    ) ||
+    englishVoices.find((voice) => naturalVoicePattern.test(voice.name)) ||
+    englishVoices.find((voice) => !voice.default) ||
+    englishVoices.find((voice) => voice.default) ||
+    voices.find((voice) => voice.default) ||
+    voices[0]
+  );
 }
 
 const coachingStyles = {
@@ -332,7 +354,20 @@ function NegotiationRoute() {
   const [error, setError] = useState("");
   const [inputError, setInputError] = useState("");
   const [isLoadingSession, setIsLoadingSession] = useState(true);
+  const [voiceOutputEnabled, setVoiceOutputEnabled] = useState(false);
+  const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
+  const [isPlayingAudio, setIsPlayingAudio] = useState(false);
+  const [speechSynthesisSupported] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      Boolean(window.speechSynthesis) &&
+      typeof window.SpeechSynthesisUtterance === "function",
+  );
   const latestMessageRef = useRef(null);
+  const speechUtteranceRef = useRef(null);
+  const speechStartTimeoutRef = useRef(null);
+  const isSendingRef = useRef(false);
+  const voiceOutputEnabledRef = useRef(false);
 
   useEffect(() => {
     let isCurrent = true;
@@ -345,6 +380,8 @@ function NegotiationRoute() {
       setLatestCoaching(null);
       setIsScenarioMenuOpen(false);
       setScenarioMenuError("");
+      stopVoicePlayback();
+      isSendingRef.current = false;
 
       if (routedSession) {
         setSelectedSession(getSessionState(routedSession, sessionId));
@@ -445,20 +482,114 @@ function NegotiationRoute() {
     latestMessageRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isSending]);
 
-  async function sendMessage(event) {
-    event.preventDefault();
+  useEffect(
+    () => () => {
+      speechUtteranceRef.current = null;
+      window.clearTimeout(speechStartTimeoutRef.current);
+      window.speechSynthesis?.cancel();
+    },
+    [],
+  );
 
-    const trimmedMessage = draftMessage.trim();
+  function stopVoicePlayback() {
+    speechUtteranceRef.current = null;
+    window.clearTimeout(speechStartTimeoutRef.current);
+    speechStartTimeoutRef.current = null;
+    window.speechSynthesis?.cancel();
+    setIsGeneratingAudio(false);
+    setIsPlayingAudio(false);
+  }
+
+  function speakReply(text) {
+    if (
+      !voiceOutputEnabledRef.current ||
+      !speechSynthesisSupported ||
+      !text.trim()
+    ) {
+      return;
+    }
+
+    stopVoicePlayback();
+
+    const synth = window.speechSynthesis;
+    const utterance = new window.SpeechSynthesisUtterance(text);
+    const preferredVoice = selectPreferredSpeechVoice(synth.getVoices());
+
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+      utterance.lang = preferredVoice.lang;
+    } else {
+      utterance.lang = navigator.language || "en-US";
+    }
+
+    utterance.rate = 0.98;
+    utterance.pitch = 1;
+    utterance.volume = 1;
+    speechUtteranceRef.current = utterance;
+    setIsGeneratingAudio(true);
+
+    const finishSpeaking = () => {
+      if (speechUtteranceRef.current !== utterance) {
+        return;
+      }
+
+      speechUtteranceRef.current = null;
+      window.clearTimeout(speechStartTimeoutRef.current);
+      speechStartTimeoutRef.current = null;
+      setIsGeneratingAudio(false);
+      setIsPlayingAudio(false);
+    };
+
+    utterance.onstart = () => {
+      if (speechUtteranceRef.current !== utterance) {
+        return;
+      }
+
+      window.clearTimeout(speechStartTimeoutRef.current);
+      speechStartTimeoutRef.current = null;
+      setIsGeneratingAudio(false);
+      setIsPlayingAudio(true);
+    };
+    utterance.onend = finishSpeaking;
+    utterance.onerror = (event) => {
+      finishSpeaking();
+
+      if (!["canceled", "interrupted"].includes(event.error)) {
+        console.warn("Browser speech output was unavailable.", event.error);
+      }
+    };
+
+    try {
+      synth.speak(utterance);
+      speechStartTimeoutRef.current = window.setTimeout(() => {
+        speechStartTimeoutRef.current = null;
+
+        if (speechUtteranceRef.current === utterance && !synth.speaking) {
+          speechUtteranceRef.current = null;
+          setIsGeneratingAudio(false);
+          setIsPlayingAudio(false);
+          synth.cancel();
+        }
+      }, 5000);
+    } catch (err) {
+      finishSpeaking();
+      console.warn("Browser speech output could not start.", err);
+    }
+  }
+
+  async function submitMessage(message) {
+    const trimmedMessage = message.trim();
 
     if (!trimmedMessage) {
       setInputError("Enter a negotiation move before sending.");
-      return;
+      return false;
     }
 
-    if (isSending || !selectedSession || !sessionId) {
-      return;
+    if (isSendingRef.current || !selectedSession || !sessionId) {
+      return false;
     }
 
+    isSendingRef.current = true;
     setIsSending(true);
     setError("");
     setInputError("");
@@ -503,6 +634,10 @@ function NegotiationRoute() {
         mistakeType: data.mistake_type || "none",
         usedFallback: Boolean(data.used_fallback),
       });
+
+      if (voiceOutputEnabledRef.current) {
+        speakReply(data.reply);
+      }
     } catch (err) {
       setError(
         err instanceof Error
@@ -517,7 +652,29 @@ function NegotiationRoute() {
         },
       ]);
     } finally {
+      isSendingRef.current = false;
       setIsSending(false);
+    }
+
+    return true;
+  }
+
+  function sendMessage(event) {
+    event.preventDefault();
+    void submitMessage(draftMessage);
+  }
+
+  function toggleVoiceOutput() {
+    if (!speechSynthesisSupported) {
+      return;
+    }
+
+    const nextEnabled = !voiceOutputEnabled;
+    voiceOutputEnabledRef.current = nextEnabled;
+    setVoiceOutputEnabled(nextEnabled);
+
+    if (!nextEnabled) {
+      stopVoicePlayback();
     }
   }
 
@@ -631,6 +788,10 @@ function NegotiationRoute() {
       inputError={inputError}
       isSending={isSending}
       isEnding={isEnding}
+      voiceOutputEnabled={voiceOutputEnabled}
+      speechSynthesisSupported={speechSynthesisSupported}
+      isGeneratingAudio={isGeneratingAudio}
+      isPlayingAudio={isPlayingAudio}
       scenarios={scenarios}
       isScenarioMenuOpen={isScenarioMenuOpen}
       isLoadingScenarios={isLoadingScenarios}
@@ -642,6 +803,7 @@ function NegotiationRoute() {
       onToggleScenarioMenu={() => setIsScenarioMenuOpen((isOpen) => !isOpen)}
       onSwitchScenario={switchScenario}
       onEndSession={endSession}
+      onToggleVoiceOutput={toggleVoiceOutput}
       onDraftChange={(value) => {
         setDraftMessage(value);
         if (inputError && value.trim()) {
@@ -905,19 +1067,20 @@ function IntroScreen({ onStart }) {
       <footer className="mx-auto mt-14 grid w-full max-w-6xl gap-5 border-t border-[#B8863E]/45 py-8 text-center sm:grid-cols-3 sm:items-center sm:text-left">
         <Link
           to="/"
-          className="font-sans text-xs font-semibold uppercase tracking-[0.22em] text-[#B8863E] transition duration-200 hover:text-[#D0A15A]"
+          className="mx-auto inline-flex items-center gap-2 font-serif text-lg font-semibold text-[#F1E7DA] transition duration-200 hover:text-[#D0A15A] sm:mx-0"
         >
+          <BrandMark className="h-7 w-7" />
           Counterpart
         </Link>
         <p className="hidden">
-          Practice the hard conversations before they happen. Counterpart © 2026
+          Practice the hard conversations before they happen. Counterpart &copy; 2026
         </p>
         <p className="font-sans text-sm leading-6 text-[#B9AB99] sm:whitespace-nowrap sm:text-center">
           Practice the hard conversations before they happen.{" "}
           <Link to="/" className="transition duration-200 hover:text-[#D0A15A]">
             Counterpart
           </Link>{" "}
-          © 2026
+          &copy; 2026
         </p>
         <a
           href="https://github.com/SameerAhmedAI/CounterPart-AI"
@@ -930,6 +1093,22 @@ function IntroScreen({ onStart }) {
         </a>
       </footer>
     </section>
+  );
+}
+
+function BrandMark({ className = "h-6 w-6" }) {
+  return (
+    <svg
+      aria-hidden="true"
+      className={className}
+      viewBox="0 0 64 64"
+      fill="none"
+    >
+      <path d="M8 16h20l11 16-11 16H8l11-16L8 16Z" fill="#B8863E" />
+      <path d="M56 16H36L25 32l11 16h20L45 32l11-16Z" fill="#B8863E" opacity="0.78" />
+      <path d="M24 32h16" stroke="#1C1B1A" strokeWidth="4" strokeLinecap="round" />
+      <circle cx="32" cy="32" r="3" fill="#1C1B1A" />
+    </svg>
   );
 }
 
@@ -1231,6 +1410,10 @@ function ChatScreen({
   inputError,
   isSending,
   isEnding,
+  voiceOutputEnabled,
+  speechSynthesisSupported,
+  isGeneratingAudio,
+  isPlayingAudio,
   scenarios,
   isScenarioMenuOpen,
   isLoadingScenarios,
@@ -1242,6 +1425,7 @@ function ChatScreen({
   onToggleScenarioMenu,
   onSwitchScenario,
   onEndSession,
+  onToggleVoiceOutput,
   onDraftChange,
   onInputKeyDown,
   onSend,
@@ -1249,6 +1433,11 @@ function ChatScreen({
   const otherScenarios = scenarios.filter(
     (scenario) => scenario.id !== selectedSession.scenario.id,
   );
+  const voiceStatus = isGeneratingAudio
+    ? "Generating voice"
+    : isPlayingAudio
+      ? "Counterpart speaking"
+      : "";
 
   return (
     <section className="screen-panel flex h-[calc(100svh-3rem)] min-h-0 flex-col gap-3 overflow-hidden">
@@ -1364,6 +1553,42 @@ function ChatScreen({
           {error ? <ErrorBanner message={error} compact /> : null}
 
           <form onSubmit={onSend} className="mt-auto border-t border-[#4A3F33] p-3">
+            <div className="mb-2 flex min-h-8 flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onToggleVoiceOutput}
+                  disabled={!speechSynthesisSupported}
+                  aria-pressed={voiceOutputEnabled}
+                  title={
+                    speechSynthesisSupported
+                      ? "Toggle AI voice output"
+                      : "Voice output is unavailable in this browser"
+                  }
+                  className={`inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 font-sans text-[0.65rem] font-bold uppercase tracking-[0.1em] transition duration-200 disabled:cursor-not-allowed disabled:opacity-45 ${
+                    voiceOutputEnabled
+                      ? "border-[#B8863E] bg-[#B8863E]/15 text-[#F3D49B]"
+                      : "border-[#4A3F33] bg-[#1F1D1B] text-[#B9AB99] hover:border-[#B8863E]"
+                  }`}
+                >
+                  {voiceOutputEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+                  Voice output
+                </button>
+              </div>
+
+              <div
+                className="flex min-h-5 items-center gap-2 font-sans text-[0.68rem] font-semibold uppercase tracking-[0.1em] text-[#B8863E]"
+                aria-live="polite"
+              >
+                {voiceStatus ? (
+                  <>
+                    <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                    {voiceStatus}
+                  </>
+                ) : null}
+              </div>
+            </div>
+
             <div className="flex items-end gap-2">
               <label className="sr-only" htmlFor="negotiation-message">
                 Your negotiation message
