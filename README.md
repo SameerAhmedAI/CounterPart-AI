@@ -1,104 +1,159 @@
-# Counterpart
+# 🚀 Counterpart - AI Negotiation Practice App
 
-Counterpart is an AI negotiation practice app that lets users rehearse high-stakes conversations against an in-character AI counterpart. It helps users practice anchoring, resisting pressure, handling negotiation tactics, and reviewing their performance through structured real-time coaching and an end-of-session report.
+Counterpart is an **AI negotiation practice app** that lets you rehearse high-stakes conversations — salary negotiations, rent renewals, freelance pricing, vendor disputes, or a scenario you write yourself — against an **in-character AI counterpart** with its own incentives, personality, and walk-away point. Counterpart tracks the **tactics used against you**, coaches your moves in real time, and grades your performance in an **end-of-session report**.
 
-## Setup instructions
+---
 
-These steps run the FastAPI backend and Vite/React frontend locally from a fresh clone.
+## 🏗️ System Architecture & Workflow
 
-### 1. Clone the repository
+Counterpart has no user roles or accounts — it's a single-user practice tool built around one core loop: pick a scenario, negotiate live, get coached, review a report.
 
+### 🔄 Negotiation Session Pipeline (Workflow)
+
+```mermaid
+graph TD
+    User([User]) -->|Selects Scenario| App[React Frontend]
+    App -->|Custom Scenario| DB[(SQLite - Custom Scenarios)]
+    App -->|POST negotiation move| Server[FastAPI Backend]
+    Server -->|Sends context + history| Groq[Groq API - llama-3.3-70b-versatile]
+    Groq -->|In-Character Reply| Server
+    Groq -->|Tactic + Move Classification| Server
+    Server -->|Live Sidebar Update| App
+    App -->|Optional| Speech[Web Speech API - speechSynthesis]
+    User -->|Ends Session| Server
+    Server -->|Deterministic Concession/Tactic Counts + LLM Takeaways| Report[Scored End-of-Session Report]
+    Report -->|Rendered To| User
+```
+
+Session state (active conversations, live coaching, in-progress negotiations) is held **in memory** on the backend and is lost on restart. Only saved custom scenarios persist beyond a session, via SQLite.
+
+### 🗄️ Database Schema
+
+Counterpart's only persistent storage is custom user-created scenarios (up to 3 at a time). There is no schema for users, negotiation sessions, or reports — those are runtime/in-memory only.
+
+```mermaid
+erDiagram
+    CUSTOM_SCENARIOS {
+        INTEGER id PK
+        TEXT persona_name
+        TEXT persona_description
+        TEXT personality
+        TEXT walk_away_point
+        TEXT opening_move
+        TIMESTAMP createdAt
+    }
+```
+
+---
+
+## 🛠️ Technology Stack
+
+### Backend
+- **Core Engine:** FastAPI
+- **AI Core:** Groq API (`llama-3.3-70b-versatile`, OpenAI-compatible chat completions) — powers the negotiation persona, tactic/coaching classification, and end-of-session report generation
+- **Database:** SQLite (custom scenario storage only; created automatically on first save)
+- **Session State:** In-memory (not persisted across backend restarts)
+
+### Frontend
+- **Framework & Build Tool:** React, Vite
+- **Styling Engine:** Tailwind CSS
+- **Voice Output:** Web Speech API (`speechSynthesis`) — reads AI replies aloud using the browser's built-in engine
+
+### Coding Agent
+- **Codex** — used as the coding agent across every phase: scaffolding, the persona/negotiation engine, tactic-recognition and coaching classifier, end-of-session report, database-backed custom scenarios, voice output, and UI polish.
+
+---
+
+## 📂 Project Directory Structure
+
+```
+CounterPart-AI/
+├── backend/
+│   ├── app/
+│   │   └── main.py               # FastAPI entry point
+│   ├── .venv/                    # Python virtual environment (local)
+│   ├── requirements.txt
+│   └── [SQLite DB file]          # Auto-created on first custom scenario save
+├── frontend/
+│   ├── src/                      # React components, negotiation UI, coaching sidebar
+│   ├── package.json
+│   └── vite.config.js
+├── .env.example                  # Template: GROQ_API_KEY, GROQ_MODEL, VITE_API_URL
+└── README.md
+```
+
+---
+
+## 🚀 Installation & Local Setup
+
+### Prerequisites
+- **Python** (for the FastAPI backend, with `venv` support)
+- **Node.js** (for the Vite/React frontend)
+- **Groq API Key** (free tier available at the Groq Console)
+
+### Step 1: Clone the Repository
 ```bash
 git clone <your-repository-url>
 cd CounterPart-AI
 ```
 
-### 2. Create the environment file
+### Step 2: Configure the Environment
+1. Copy the example environment file:
+   ```bash
+   copy .env.example .env
+   ```
+   On macOS or Linux:
+   ```bash
+   cp .env.example .env
+   ```
+2. Open `.env` and fill in your details:
+   ```env
+   GROQ_API_KEY=your_groq_api_key
+   GROQ_MODEL=llama-3.3-70b-versatile
+   VITE_API_URL=http://127.0.0.1:8000
+   ```
+   Get a free Groq API key from the Groq Console: https://console.groq.com/keys
 
-Copy the example environment file:
+### Step 3: Run the Backend
+1. Navigate to the `backend` folder and set up the virtual environment:
+   ```bash
+   cd backend
+   python -m venv .venv
+   .venv\Scripts\activate
+   ```
+   On macOS or Linux, activate with:
+   ```bash
+   source .venv/bin/activate
+   ```
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Start the server:
+   ```bash
+   uvicorn app.main:app --reload
+   ```
+   *Note: A local SQLite database file is created automatically the first time you save a custom scenario — no additional setup required.*
 
-```bash
-copy .env.example .env
-```
+   The backend runs on [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
-On macOS or Linux:
+### Step 4: Run the Frontend
+1. Open a second terminal from the project root:
+   ```bash
+   cd frontend
+   ```
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the Vite development server:
+   ```bash
+   npm run dev
+   ```
+4. Open [http://localhost:5173](http://localhost:5173) in your web browser.
 
-```bash
-cp .env.example .env
-```
+---
 
-Set these values:
+## 📄 License
 
-```text
-GROQ_API_KEY=your_groq_api_key
-GROQ_MODEL=llama-3.3-70b-versatile
-VITE_API_URL=http://127.0.0.1:8000
-```
-
-Get a Groq API key from the Groq Console: https://console.groq.com/keys
-
-### 3. Install and run the backend
-
-From the project root:
-
-```bash
-cd backend
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-On macOS or Linux, activate the virtual environment with:
-
-```bash
-source .venv/bin/activate
-```
-
-The backend runs on:
-
-```text
-http://127.0.0.1:8000
-```
-
-### 4. Install and run the frontend
-
-Open a second terminal from the project root:
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The frontend runs on:
-
-```text
-http://localhost:5173
-```
-
-## How to use the app
-
-Open the frontend in your browser, choose a negotiation scenario, and start the session. The AI counterpart opens in character, then you negotiate by sending messages in the chat. When you are done, end the session to generate a report that summarizes your performance, tactics faced, concessions, and practical takeaways.
-
-## Tech stack
-
-- FastAPI
-- Groq using `llama-3.3-70b-versatile`
-- React
-- Vite
-- Tailwind
-
-## Built with Codex
-
-Codex was used as the coding agent for the entire build across all phases: scaffolding, the negotiation loop, the tactic-classification engine, the end-of-session report, and UI polish. The deployed model provider is Groq using `llama-3.3-70b-versatile`, not OpenAI GPT-5.6, due to budget constraints. The agentic architecture, including the persona engine, tactic recognition, and structured coaching output, was designed and iterated on through Codex prompts.
-
-## Known limitations
-
-- Sessions are stored in memory. Restarting the backend clears active sessions and reports, and deployed instances do not preserve negotiation history across process restarts.
-- Refreshing or directly reopening an old session can lose state if the backend process has restarted or the in-memory session is gone.
-- The tactic and mistake classifier is LLM-based, so results can vary from session to session. Similar user messages may occasionally receive different labels, coaching notes, or severity judgments because the classification is generated by the model rather than a deterministic rules engine.
-
-## Team/credits
-
-Built by the Counterpart team with Codex as the coding agent and Groq as the model provider.
+MIT License.
