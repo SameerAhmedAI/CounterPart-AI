@@ -1,14 +1,53 @@
-# 🚀 Counterpart - AI Negotiation Practice App
+<div align="center">
+  <img src="CounterPart-AI.png" width="500">
+  
+  #
+   
+  <p><b>AI-Powered Negotiation Practice App with Real-Time Coaching & Session Reports</b></p>
+ 
+![Last Commit](https://img.shields.io/github/last-commit/Muhammad-Ahmed-Rayyan/CounterPart-AI)
+![Python](https://img.shields.io/badge/Python-Backend-blue?logo=python)
+![JavaScript](https://img.shields.io/badge/JavaScript-Frontend-yellow?logo=javascript)
+![languages](https://img.shields.io/github/languages/count/Muhammad-Ahmed-Rayyan/CounterPart-AI)
 
-Counterpart is an **AI negotiation practice app** that lets you rehearse high-stakes conversations — salary negotiations, rent renewals, freelance pricing, vendor disputes, or a scenario you write yourself — against an **in-character AI counterpart** with its own incentives, personality, and walk-away point. Counterpart tracks the **tactics used against you**, coaches your moves in real time, and grades your performance in an **end-of-session report**.
+
+<br>
+
+Built with the tools and technologies:  
+![FastAPI](https://img.shields.io/badge/FastAPI-005571?style=for-the-badge&logo=fastapi&logoColor=white)
+![React](https://img.shields.io/badge/React-%2361DAFB.svg?style=for-the-badge&logo=react&logoColor=black)
+![Vite](https://img.shields.io/badge/Vite-%23646CFF.svg?style=for-the-badge&logo=vite&logoColor=white)
+![TailwindCSS](https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white)
+![Groq](https://img.shields.io/badge/Groq-F55036?style=for-the-badge&logo=groq&logoColor=white)
+![SQLite](https://img.shields.io/badge/SQLite-07405E?style=for-the-badge&logo=sqlite&logoColor=white)
+
+</div>
+
+---
+
+## 🧠 Project Summary
+
+**Counterpart** is an AI negotiation practice app that lets you rehearse high-stakes conversations — salary negotiations, rent renewals, freelance pricing, vendor disputes, or a scenario you write yourself — against an **in-character AI counterpart** with its own incentives, personality, and walk-away point.
+
+Counterpart tracks the tactics used against you, coaches your moves in real time, and grades your performance in an **end-of-session report**. It's a single-user practice tool with no accounts or roles, built around one core loop: pick a scenario, negotiate live, get coached, review a report.
+
+---
+
+## 🚀 Features
+
+- 🎭 **In-Character AI Counterpart** — negotiates with its own persona, personality, and walk-away point
+- 📝 **Custom Scenarios** — write and save your own negotiation scenarios (up to 3 at a time)
+- 🧭 **Live Tactic Tracking** — recognizes and surfaces the tactics being used against you as the conversation unfolds
+- 🪄 **Real-Time Coaching** — get move-by-move coaching in a live sidebar during the negotiation
+- 📊 **End-of-Session Report** — deterministic concession/tactic counts combined with LLM-generated takeaways
+- 🔊 **Voice Output** — AI replies read aloud via the browser's built-in Web Speech API
+- ⚡ **In-Memory Sessions** — negotiations run live in memory for a fast, stateless practice loop
 
 ---
 
 ## 🏗️ System Architecture & Workflow
 
-Counterpart has no user roles or accounts — it's a single-user practice tool built around one core loop: pick a scenario, negotiate live, get coached, review a report.
-
-### 🔄 Negotiation Session Pipeline (Workflow)
+Counterpart is built around a single core loop: pick a scenario, negotiate live, get coached, review a report. Session state (active conversations, live coaching, in-progress negotiations) is held in memory on the backend and is lost on restart — only saved custom scenarios persist, via SQLite.
 
 ```mermaid
 graph TD
@@ -25,11 +64,9 @@ graph TD
     Report -->|Rendered To| User
 ```
 
-Session state (active conversations, live coaching, in-progress negotiations) is held **in memory** on the backend and is lost on restart. Only saved custom scenarios persist beyond a session, via SQLite.
-
 ### 🗄️ Database Schema
 
-Counterpart's only persistent storage is custom user-created scenarios (up to 3 at a time). There is no schema for users, negotiation sessions, or reports — those are runtime/in-memory only.
+The only persistent storage is custom user-created scenarios. There is no schema for users, negotiation sessions, or reports — those are runtime/in-memory only.
 
 ```mermaid
 erDiagram
@@ -46,114 +83,111 @@ erDiagram
 
 ---
 
-## 🛠️ Technology Stack
+## 🗃️ Project Structure
 
-### Backend
-- **Core Engine:** FastAPI
-- **AI Core:** Groq API (`llama-3.3-70b-versatile`, OpenAI-compatible chat completions) — powers the negotiation persona, tactic/coaching classification, and end-of-session report generation
-- **Database:** SQLite (custom scenario storage only; created automatically on first save)
-- **Session State:** In-memory (not persisted across backend restarts)
-
-### Frontend
-- **Framework & Build Tool:** React, Vite
-- **Styling Engine:** Tailwind CSS
-- **Voice Output:** Web Speech API (`speechSynthesis`) — reads AI replies aloud using the browser's built-in engine
-
-### Coding Agent
-- **Codex** — used as the coding agent across every phase: scaffolding, the persona/negotiation engine, tactic-recognition and coaching classifier, end-of-session report, database-backed custom scenarios, voice output, and UI polish.
-
----
-
-## 📂 Project Directory Structure
-
-```
+```bash
 CounterPart-AI/
 ├── backend/
 │   ├── app/
-│   │   └── main.py               # FastAPI entry point
-│   ├── .venv/                    # Python virtual environment (local)
-│   ├── requirements.txt
-│   └── [SQLite DB file]          # Auto-created on first custom scenario save
+│   │   ├── __init__.py           # Package initialization marker
+│   │   ├── config.py             # Settings, environment configuration, & database path setup
+│   │   ├── custom_scenarios.py   # Database access models and routes for user-created scenarios
+│   │   ├── main.py               # Core application routing, Groq LLM API integrations, and CORS config
+│   │   └── scenarios.py          # Pre-configured default negotiation scenarios (salary, rent, etc.)
+│   ├── counterpart.db            # SQLite database for storing custom scenarios (auto-created on first save)
+│   └── requirements.txt          # Python dependencies list (FastAPI, uvicorn, groq, sqlalchemy, pydantic)
 ├── frontend/
-│   ├── src/                      # React components, negotiation UI, coaching sidebar
-│   ├── package.json
-│   └── vite.config.js
-├── .env.example                  # Template: GROQ_API_KEY, GROQ_MODEL, VITE_API_URL
+│   ├── public/
+│   │   ├── counterpart-mark.svg  # App brand mark icon logo
+│   │   └── favicon.ico           # Browser tab favicon
+│   ├── src/
+│   │   ├── App.jsx               # Main UI component (Scenario picker, active negotiation, coaching sidebar, scoring reports)
+│   │   ├── index.css             # Main stylesheet declaring Tailwind CSS directives
+│   │   └── main.jsx              # React application entry point (mounts App to index.html)
+│   ├── .env.example              # Template for frontend-specific environment variables
+│   ├── index.html                # Main index template containing the application container mount point
+│   ├── package.json              # Node.js project configuration, metadata, and dependencies
+│   ├── package-lock.json         # Node.js dependency lock file
+│   ├── postcss.config.js         # Configuration for Tailwind's PostCSS parser
+│   ├── tailwind.config.js        # Custom Tailwind CSS configuration for layouts and color themes
+│   └── vite.config.js            # Vite configuration including backend proxy settings
+├── .env.example
+├── .gitignore
+├── DEPLOYMENT.md
+├── LICENSE
 └── README.md
 ```
 
 ---
 
-## 🚀 Installation & Local Setup
+## 🔧 Setup & Installation
 
-### Prerequisites
-- **Python** (for the FastAPI backend, with `venv` support)
-- **Node.js** (for the Vite/React frontend)
-- **Groq API Key** (free tier available at the Groq Console)
+> Make sure **Python** (with `venv` support) and **Node.js** are installed on your system.
 
-### Step 1: Clone the Repository
+### ⚙️ Backend
+
 ```bash
-git clone <your-repository-url>
-cd CounterPart-AI
+# Clone the repo
+git clone https://github.com/Muhammad-Ahmed-Rayyan/CounterPart-AI.git
+cd CounterPart-AI/backend
+
+# Create and activate a virtual environment
+python -m venv .venv
+.venv\Scripts\activate        # Windows
+source .venv/bin/activate     # macOS/Linux
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Start the server
+uvicorn app.main:app --reload
 ```
 
-### Step 2: Configure the Environment
-1. Copy the example environment file:
-   ```bash
-   copy .env.example .env
-   ```
-   On macOS or Linux:
-   ```bash
-   cp .env.example .env
-   ```
-2. Open `.env` and fill in your details:
-   ```env
-   GROQ_API_KEY=your_groq_api_key
-   GROQ_MODEL=llama-3.3-70b-versatile
-   VITE_API_URL=http://127.0.0.1:8000
-   ```
-   Get a free Groq API key from the Groq Console: https://console.groq.com/keys
+> A local SQLite database file is created automatically the first time you save a custom scenario — no additional setup required. The backend runs on [http://127.0.0.1:8000](http://127.0.0.1:8000).
 
-### Step 3: Run the Backend
-1. Navigate to the `backend` folder and set up the virtual environment:
-   ```bash
-   cd backend
-   python -m venv .venv
-   .venv\Scripts\activate
-   ```
-   On macOS or Linux, activate with:
-   ```bash
-   source .venv/bin/activate
-   ```
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Start the server:
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-   *Note: A local SQLite database file is created automatically the first time you save a custom scenario — no additional setup required.*
+### 💻 Frontend
 
-   The backend runs on [http://127.0.0.1:8000](http://127.0.0.1:8000).
+```bash
+# In a separate terminal, from the project root
+cd frontend
 
-### Step 4: Run the Frontend
-1. Open a second terminal from the project root:
-   ```bash
-   cd frontend
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Start the Vite development server:
-   ```bash
-   npm run dev
-   ```
-4. Open [http://localhost:5173](http://localhost:5173) in your web browser.
+# Install dependencies
+npm install
+
+# Start the development server
+npm run dev
+```
+
+> Open [http://localhost:5173](http://localhost:5173) in your browser.
 
 ---
 
-## 📄 License
+## 🔑 API Configuration
 
-MIT License.
+Copy the example environment file and fill in your details:
+
+```bash
+cp .env.example .env
+```
+
+```.env
+GROQ_API_KEY="YOUR-GROQ-API-KEY"
+GROQ_MODEL="llama-3.3-70b-versatile"
+VITE_API_URL="http://127.0.0.1:8000"
+```
+
+You can obtain your key from the [Groq Console](https://console.groq.com/keys) — a free tier is available.
+
+---
+
+## 🧰 Coding Agent
+
+**Codex** was used as the coding agent across every phase of this project: scaffolding, the persona/negotiation engine, tactic-recognition and coaching classifier, end-of-session report, database-backed custom scenarios, voice output, and UI polish.
+
+---
+
+<div align="center">
+
+⭐ Found this project useful? Drop a star on GitHub!
+
+</div>
